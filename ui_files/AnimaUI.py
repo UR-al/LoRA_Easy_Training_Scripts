@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QFormLayout, QGridLayout
 
 from modules.DragDropLineEdit import DragDropLineEdit
 from modules.ScrollOnSelect import (ComboBox, DoubleSpinBox, SpinBox)
+from modules.SigmoidScaleInput import SigmoidScaleInput
 
 class Ui_anima_ui(object):
     def setupUi(self, anima_ui):
@@ -141,11 +142,19 @@ class Ui_anima_ui(object):
         self.label_sigmoid = QLabel(self.anima_training_box)
         self.label_sigmoid.setObjectName(u"label_sigmoid")
         self.horizontalLayout_sampling.addWidget(self.label_sigmoid)
-        self.sigmoid_scale_input = DoubleSpinBox(self.anima_training_box)
-        self.sigmoid_scale_input.setDecimals(2)
-        self.sigmoid_scale_input.setSingleStep(0.1)
-        self.sigmoid_scale_input.setValue(1.0)
+        self.sigmoid_scale_input = SigmoidScaleInput(self.anima_training_box)
+        self.sigmoid_scale_input.setObjectName(u"sigmoid_scale_input")
         self.horizontalLayout_sampling.addWidget(self.sigmoid_scale_input)
+
+        self.label_scale_resume = QLabel(self.anima_training_box)
+        self.label_scale_resume.setObjectName(u"label_scale_resume")
+        self.horizontalLayout_sampling.addWidget(self.label_scale_resume)
+        self.scale_resume_input = SpinBox(self.anima_training_box)
+        self.scale_resume_input.setObjectName(u"scale_resume_input")
+        self.scale_resume_input.setMinimum(0)
+        self.scale_resume_input.setMaximum(999)
+        self.scale_resume_input.setValue(0)
+        self.horizontalLayout_sampling.addWidget(self.scale_resume_input)
         
         self.formLayout_3.setLayout(5, QFormLayout.SpanningRole, self.horizontalLayout_sampling)
 
@@ -177,6 +186,10 @@ class Ui_anima_ui(object):
         self.blocks_to_swap_input.setValue(0)
         self.horizontalLayout_vae_mem.addWidget(self.blocks_to_swap_input)
 
+        self.use_ramtorch_enable = QCheckBox(self.anima_training_box)
+        self.use_ramtorch_enable.setObjectName(u"use_ramtorch_enable")
+        self.horizontalLayout_vae_mem.addWidget(self.use_ramtorch_enable)
+
         self.formLayout_3.setLayout(6, QFormLayout.SpanningRole, self.horizontalLayout_vae_mem)
 
         # Misc Checkboxes
@@ -195,6 +208,81 @@ class Ui_anima_ui(object):
         self.horizontalLayout_misc.addWidget(self.unsloth_offload_checkpointing)
         
         self.formLayout_3.setLayout(7, QFormLayout.SpanningRole, self.horizontalLayout_misc)
+
+        # Anima 3.8B v1.1 connector (--anima38_connector and its options)
+        self.anima38_box = QGroupBox(self.anima_training_box)
+        self.anima38_box.setObjectName(u"anima38_box")
+        self.anima38_box.setCheckable(True)
+        self.anima38_box.setChecked(False)
+        self.formLayout_anima38 = QFormLayout(self.anima38_box)
+        self.formLayout_anima38.setObjectName(u"formLayout_anima38")
+
+        self.label_qwen35 = QLabel(self.anima38_box)
+        self.label_qwen35.setObjectName(u"label_qwen35")
+        self.formLayout_anima38.setWidget(0, QFormLayout.LabelRole, self.label_qwen35)
+        self.horizontalLayout_qwen35 = QHBoxLayout()
+        self.qwen35_model_input = DragDropLineEdit(self.anima38_box)
+        self.qwen35_model_input.setObjectName(u"qwen35_model_input")
+        self.horizontalLayout_qwen35.addWidget(self.qwen35_model_input)
+        self.qwen35_model_selector = QPushButton(self.anima38_box)
+        self.qwen35_model_selector.setObjectName(u"qwen35_model_selector")
+        self.horizontalLayout_qwen35.addWidget(self.qwen35_model_selector)
+        self.formLayout_anima38.setLayout(0, QFormLayout.FieldRole, self.horizontalLayout_qwen35)
+
+        self.label_qwen35_tokenizer = QLabel(self.anima38_box)
+        self.label_qwen35_tokenizer.setObjectName(u"label_qwen35_tokenizer")
+        self.formLayout_anima38.setWidget(1, QFormLayout.LabelRole, self.label_qwen35_tokenizer)
+        self.horizontalLayout_qwen35_tokenizer = QHBoxLayout()
+        self.qwen35_tokenizer_input = DragDropLineEdit(self.anima38_box)
+        self.qwen35_tokenizer_input.setObjectName(u"qwen35_tokenizer_input")
+        self.horizontalLayout_qwen35_tokenizer.addWidget(self.qwen35_tokenizer_input)
+        self.qwen35_tokenizer_selector = QPushButton(self.anima38_box)
+        self.qwen35_tokenizer_selector.setObjectName(u"qwen35_tokenizer_selector")
+        self.horizontalLayout_qwen35_tokenizer.addWidget(self.qwen35_tokenizer_selector)
+        self.formLayout_anima38.setLayout(1, QFormLayout.FieldRole, self.horizontalLayout_qwen35_tokenizer)
+
+        self.horizontalLayout_anima38_opts = QHBoxLayout()
+        self.label_anima38_negative = QLabel(self.anima38_box)
+        self.label_anima38_negative.setObjectName(u"label_anima38_negative")
+        self.horizontalLayout_anima38_opts.addWidget(self.label_anima38_negative)
+        self.anima38_negative_selector = ComboBox(self.anima38_box)
+        self.anima38_negative_selector.setObjectName(u"anima38_negative_selector")
+        self.anima38_negative_selector.addItem("connector")
+        self.anima38_negative_selector.addItem("native")
+        self.horizontalLayout_anima38_opts.addWidget(self.anima38_negative_selector)
+        self.label_anima38_batch = QLabel(self.anima38_box)
+        self.label_anima38_batch.setObjectName(u"label_anima38_batch")
+        self.horizontalLayout_anima38_opts.addWidget(self.label_anima38_batch)
+        self.anima38_batch_input = SpinBox(self.anima38_box)
+        self.anima38_batch_input.setObjectName(u"anima38_batch_input")
+        self.anima38_batch_input.setMinimum(1)
+        self.anima38_batch_input.setMaximum(64)
+        self.anima38_batch_input.setValue(1)
+        self.horizontalLayout_anima38_opts.addWidget(self.anima38_batch_input)
+        self.horizontalLayout_anima38_opts.addStretch(1)
+        self.formLayout_anima38.setLayout(2, QFormLayout.SpanningRole, self.horizontalLayout_anima38_opts)
+
+        self.formLayout_3.setWidget(8, QFormLayout.SpanningRole, self.anima38_box)
+
+        # Advanced: disable speedups
+        self.horizontalLayout_advanced = QHBoxLayout()
+        self.label_advanced = QLabel(self.anima_training_box)
+        self.label_advanced.setObjectName(u"label_advanced")
+        self.horizontalLayout_advanced.addWidget(self.label_advanced)
+        self.no_compile_enable = QCheckBox(self.anima_training_box)
+        self.no_compile_enable.setObjectName(u"no_compile_enable")
+        self.horizontalLayout_advanced.addWidget(self.no_compile_enable)
+        self.no_lokr_compile_enable = QCheckBox(self.anima_training_box)
+        self.no_lokr_compile_enable.setObjectName(u"no_lokr_compile_enable")
+        self.horizontalLayout_advanced.addWidget(self.no_lokr_compile_enable)
+        self.stock_lycoris_enable = QCheckBox(self.anima_training_box)
+        self.stock_lycoris_enable.setObjectName(u"stock_lycoris_enable")
+        self.horizontalLayout_advanced.addWidget(self.stock_lycoris_enable)
+        self.no_sample_cache_enable = QCheckBox(self.anima_training_box)
+        self.no_sample_cache_enable.setObjectName(u"no_sample_cache_enable")
+        self.horizontalLayout_advanced.addWidget(self.no_sample_cache_enable)
+        self.horizontalLayout_advanced.addStretch(1)
+        self.formLayout_3.setLayout(9, QFormLayout.SpanningRole, self.horizontalLayout_advanced)
 
         self.gridLayout_2.addLayout(self.formLayout_3, 0, 0, 1, 1)
         self.gridLayout.addWidget(self.anima_training_box, 0, 0, 1, 1)
@@ -220,6 +308,18 @@ class Ui_anima_ui(object):
         self.flash_attn_enable.setText(QCoreApplication.translate("anima_ui", u"Flash Attention", None))
         self.split_attn_enable.setText(QCoreApplication.translate("anima_ui", u"Split Attention", None))
         self.unsloth_offload_checkpointing.setText(QCoreApplication.translate("anima_ui", u"Unsloth Offload", None))
+        self.label_scale_resume.setText(QCoreApplication.translate("anima_ui", u"Scale Resume", None))
+        self.use_ramtorch_enable.setText(QCoreApplication.translate("anima_ui", u"RamTorch", None))
+        self.anima38_box.setTitle(QCoreApplication.translate("anima_ui", u"Anima 3.8B v1.1 connector", None))
+        self.label_qwen35.setText(QCoreApplication.translate("anima_ui", u"Qwen3.5 Model", None))
+        self.label_qwen35_tokenizer.setText(QCoreApplication.translate("anima_ui", u"Qwen3.5 Tokenizer", None))
+        self.label_anima38_negative.setText(QCoreApplication.translate("anima_ui", u"Sample Negative", None))
+        self.label_anima38_batch.setText(QCoreApplication.translate("anima_ui", u"Qwen3.5 Batch Size", None))
+        self.label_advanced.setText(QCoreApplication.translate("anima_ui", u"Disable Speedups", None))
+        self.no_compile_enable.setText(QCoreApplication.translate("anima_ui", u"No Compile", None))
+        self.no_lokr_compile_enable.setText(QCoreApplication.translate("anima_ui", u"No LoKr Compile", None))
+        self.stock_lycoris_enable.setText(QCoreApplication.translate("anima_ui", u"Stock LyCORIS", None))
+        self.no_sample_cache_enable.setText(QCoreApplication.translate("anima_ui", u"No Sample Cache", None))
 
         # Tooltips and Placeholders
         self.dit_model_input.setPlaceholderText(QCoreApplication.translate("anima_ui",
@@ -274,6 +374,9 @@ class Ui_anima_ui(object):
         self.sigmoid_scale_input.setToolTip(QCoreApplication.translate("anima_ui",
             u"<html><head/><body><p>Scale factor for logit-normal timestep sampling. Controls distribution concentration. Default: 1.0."
             u"<br/>Higher values → more uniform; lower → more concentrated near sigma=0.5."
+            u"<br/>With <code>sigmoid</code> sampling it also takes a preset: <b>balanced</b> (= 1.0), "
+            u"<b>content</b> (more high-noise steps: composition, shapes) or <b>style</b> "
+            u"(more low-noise steps: line work, texture)."
             u"<br/><br/>"
             u"<b>Used by:</b> <code>sigmoid</code>, <code>shift</code>, <code>flux_shift</code>."
             u"<br/>"
@@ -290,7 +393,7 @@ class Ui_anima_ui(object):
         self.blocks_to_swap_input.setToolTip(QCoreApplication.translate("anima_ui",
             u"<html><head/><body><p>Number of Transformer blocks to swap between CPU and GPU during "
             u"forward/backward passes. Reduces VRAM usage at the cost of training speed. "
-            u"Set to 0 to disable (default).</p></body></html>", None))
+            u"Set to 0 to disable (default). Not together with Unsloth Offload.</p></body></html>", None))
 
         self.flash_attn_enable.setToolTip(QCoreApplication.translate("anima_ui",
             u"<html><head/><body><p>Use Flash Attention for faster training and lower VRAM usage. "
@@ -303,3 +406,53 @@ class Ui_anima_ui(object):
             u"<html><head/><body><p>Offload activations to CPU RAM using async non-blocking transfers. "
             u"Faster than standard CPU offload checkpointing. Cannot be used with "
             u"<code>--cpu_offload_checkpointing</code> or <code>--blocks_to_swap</code>.</p></body></html>", None))
+
+        self.scale_resume_input.setToolTip(QCoreApplication.translate("anima_ui",
+            u"<html><head/><body><p>After Max Train Epochs, train this many more epochs with the low-noise <b>style</b> "
+            u"preset. Needs <code>sigmoid</code> sampling and <b>Max Train Epochs</b> in General Args (not steps). 0 = off. "
+            u"Maps to <code>--scale_resume</code>.</p></body></html>", None))
+        self.use_ramtorch_enable.setToolTip(QCoreApplication.translate("anima_ui",
+            u"<html><head/><body><p>Keep the base linear weights in CPU RAM and stream them in each step: "
+            u"lower VRAM, slightly slower. Maps to <code>--use_ramtorch</code>.</p></body></html>", None))
+        self.anima38_box.setToolTip(QCoreApplication.translate("anima_ui",
+            u"<html><head/><body><p>Train on an Anima-3.8B v1.1 bundle with its frozen Semantic Connector v2 "
+            u"(Qwen3.5-4B features), the same conditioning as the Forge anima38 extension. "
+            u"Maps to <code>--anima38_connector</code>. Needs <b>Cache TE Outputs</b> in Network Args (checked for you "
+            u"when this box is switched on) and the Qwen3.5 Model below.</p></body></html>", None))
+        self.qwen35_model_input.setPlaceholderText(QCoreApplication.translate("anima_ui",
+            u"Path to the Qwen3.5-4B text encoder file [Required]", None))
+        self.qwen35_model_input.setToolTip(QCoreApplication.translate("anima_ui",
+            u"<html><head/><body><p>Qwen3.5-4B text encoder (.safetensors), loaded only while caching. "
+            u"Maps to <code>--qwen35_path</code>.</p></body></html>", None))
+        self.qwen35_tokenizer_input.setPlaceholderText(QCoreApplication.translate("anima_ui",
+            u"Qwen3.5 tokenizer folder (Optional, empty uses $ANIMA38_QWEN35_TOKENIZER_DIR or the trainer's default)",
+            None))
+        self.qwen35_tokenizer_input.setToolTip(QCoreApplication.translate("anima_ui",
+            u"<html><head/><body><p>Folder with the Qwen3.5 <code>tokenizer.json</code>. Optional: when empty, the "
+            u"trainer uses the folder in the <code>$ANIMA38_QWEN35_TOKENIZER_DIR</code> environment variable (of the "
+            u"backend), or else its own default folder, and stops with a clear error if neither exists. "
+            u"Maps to <code>--qwen35_tokenizer_dir</code>.</p></body></html>", None))
+        self.anima38_negative_selector.setToolTip(QCoreApplication.translate("anima_ui",
+            u"<html><head/><body><p>How the negative prompt of training samples is conditioned.<br/>"
+            u"<b>connector</b>: through the Semantic Connector, like Forge with 'Anima38 negative' switched on. "
+            u"This is the trainer's default (no key is written).<br/>"
+            u"<b>native</b>: the plain llm_adapter, like Forge's own default setting ('Anima38 negative' off).<br/>"
+            u"Maps to <code>--anima38_sample_negative</code>.</p></body></html>", None))
+        self.anima38_batch_input.setToolTip(QCoreApplication.translate("anima_ui",
+            u"<html><head/><body><p>Captions per Qwen3.5 forward while caching. 1 = one unpadded caption per call, "
+            u"exactly like Forge (default); larger is faster but pads the batch. "
+            u"Maps to <code>--anima38_qwen35_batch_size</code>.</p></body></html>", None))
+        self.label_advanced.setToolTip(QCoreApplication.translate("anima_ui",
+            u"<html><head/><body><p>Advanced: switch off the fork's speedups. Leave unchecked unless debugging.</p></body></html>", None))
+        self.no_compile_enable.setToolTip(QCoreApplication.translate("anima_ui",
+            u"<html><head/><body><p>Do not torch.compile the block elementwise chains. "
+            u"Maps to <code>--anima_no_compile</code>.</p></body></html>", None))
+        self.no_lokr_compile_enable.setToolTip(QCoreApplication.translate("anima_ui",
+            u"<html><head/><body><p>Do not torch.compile the LoKr+DoRA weight rebuild. "
+            u"Maps to <code>--anima_no_lokr_compile</code>.</p></body></html>", None))
+        self.stock_lycoris_enable.setToolTip(QCoreApplication.translate("anima_ui",
+            u"<html><head/><body><p>Use the stock LyCORIS LoKr forward and per-call sample merges (slower; same results). "
+            u"Maps to <code>--anima_stock_lycoris</code>.</p></body></html>", None))
+        self.no_sample_cache_enable.setToolTip(QCoreApplication.translate("anima_ui",
+            u"<html><head/><body><p>Sample without the merged LoKr weight cache (slower; same results). "
+            u"Maps to <code>--anima_no_sample_cache</code>.</p></body></html>", None))

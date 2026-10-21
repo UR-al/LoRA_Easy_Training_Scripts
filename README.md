@@ -17,8 +17,9 @@ Measured on an RTX 5090 (32 GB), Windows 11, torch 2.7.1 (cu128), LoKr (factor 4
 - VRAM figures are PyTorch peak memory in GiB, so they read a little lower than Task Manager.
 
 ### New models
-- **MOSS-Image** LoRA / LyCORIS training — command line only for now (`examples/moss/train_moss.ps1`); the GUI has no MOSS option yet.
+- **MOSS-Image** LoRA / LyCORIS training — in the GUI (**MOSS-Image Args** section, under Anima Args) or from the command line (`examples/moss/train_moss.ps1`). It needs **Cache TE Outputs** (Network Args; checked for you when the section is switched on), and with a LyCORIS algorithm **LyCORIS Preset = `moss`** (or `moss-text`).
 - **Anima 3.8B v1.1 conditioning** (Qwen3.5-4B + Semantic Connector v2), enabled with `anima38_connector = true`. Training reads prompts the same way the Forge extension does at inference. Ported from [GumGum10/forge-anima-3.8B](https://github.com/GumGum10/forge-anima-3.8B) (MIT).
+- **Anima LoRA / full fine-tune from the command line**: `examples/anima/` (base 1.0, 2.9B, 3.8B v1.1; the full fine-tune is experimental). Its README has the download links, a dataset template and one-line launchers.
 
 ### Speed
 
@@ -55,6 +56,7 @@ The speed work also lowered peak VRAM: MOSS-Image 1536 batch 2 22.9 → 18.3 GiB
 - **Separate learning rate / weight decay for DoRA magnitudes**: `--learning_rate_DoRA`, `--weight_decay_DoRA`.
   Note: DoRA magnitudes now get **no weight decay by default**; set `weight_decay_DoRA` for the old behaviour.
 - **Config checks**: unknown keys in the training TOML are reported with suggestions (`strict_config_keys = true` makes them an error); values of the wrong type (e.g. `"false"` in quotes for an on/off option) stop the run with the file and line.
+- **In the GUI**: the MOSS-Image section has every MOSS option (model files, timestep sampling incl. the `moss` distribution, attention, block swap / RamTorch / Unsloth offload, `moss_lora_exclude_blocks`, sample shift / uncond skip layers, speed-up switches). Anima Args adds `sigmoid_scale` presets, Scale Resume, RamTorch, an **Anima 3.8B v1.1 connector** box (`anima38_connector`, `qwen35_path`, …) and the speed-up switches; Network Args adds **DoRA LR / DoRA WD / DoRA on output** (`wd_on_output`) next to DoRA and **Caption Variants** (`cache_caption_variants`) next to Cache TE Outputs. Controls left at their defaults write nothing to the TOML. The GUI loads only TOMLs it saved itself: the flat trainer configs in `examples/` are for the command-line launchers.
 
 ### Behaviour changes and fixes
 - Multi-line caption files are now read whole (they were cut to the first line).

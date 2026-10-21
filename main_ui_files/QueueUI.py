@@ -15,6 +15,8 @@ class QueueWidget(QWidget):
         super().__init__(parent)
         self.selected = None
         self.elements: list[QueueItem] = []
+        # Writes the current args to a queue file; False when they cannot be saved (invalid args): no item is added
+        self.save_handler = None
         self.widget = Ui_queue_ui()
         self.content = QWidget()
 
@@ -41,6 +43,9 @@ class QueueWidget(QWidget):
 
     def add_to_queue(self) -> None:
         new_item = QueueItem()
+        if self.save_handler is not None and not self.save_handler(new_item.queue_file):
+            new_item.deleteLater()
+            return
         new_item.QueueSelected.connect(self.update_selected)
         new_item.setText(self.widget.queue_name.text() or "Unnamed")
         self.elements.append(new_item)
@@ -48,7 +53,8 @@ class QueueWidget(QWidget):
         new_item.setChecked(True)
         self.uncheck_elements(True)
         self.widget.queue_scroll_widget.layout().addWidget(new_item)
-        self.saveQueue.emit(new_item.queue_file)
+        if self.save_handler is None:
+            self.saveQueue.emit(new_item.queue_file)
 
     def remove_from_queue(self) -> None:
         if not self.selected:

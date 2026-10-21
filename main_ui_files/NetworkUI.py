@@ -1,10 +1,57 @@
 from PySide6 import QtCore
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QLineEdit, QWidget
 from modules.BlockWeightWidgets import BlockWeightWidget, BlockWidget
 from modules.OptimizerItem import OptimizerItem
 from ui_files.NetworkUI import Ui_network_ui
 from modules.BaseWidget import BaseWidget
 from modules.CollapsibleWidget import CollapsibleWidget
+from modules.ScrollOnSelect import SpinBox
+
+DORA_KEYS = ("learning_rate_DoRA", "weight_decay_DoRA")
+INVALID_LINE_STYLE = "QLineEdit { border: 1px solid #c94040; }"
+CAPTION_VARIANTS_MAX = 64
+
+
+def str_bool(value) -> bool:
+    """LyCORIS's reading of a network arg (lycoris.utils.str_bool): only "true" in any case is True."""
+    return value is not None and str(value).strip().lower() == "true"
+
+
+def parse_dora_lr(text: str) -> float | None:
+    """DoRA learning rate text -> a float > 0, or None (empty or not a positive number)."""
+    try:
+        value = float(str(text).strip())
+    except ValueError:
+        return None
+    if value != value or value in (float("inf"), float("-inf")) or value <= 0:
+        return None
+    return value
+
+
+def parse_dora_wd(text: str) -> float | None:
+    """DoRA weight decay text -> a float >= 0 (empty = 0), or None when it is not such a number. Kept exactly as typed
+    (1e-5 stays 1e-5), unlike a spin box with fixed decimals."""
+    text = str(text).strip()
+    if not text:
+        return 0.0
+    try:
+        value = float(text)
+    except ValueError:
+        return None
+    if value != value or value in (float("inf"), float("-inf")) or value < 0:
+        return None
+    return value
+
+
+def dora_number_text(value) -> str:
+    """Text shown for a loaded DoRA WD (0 or missing -> empty)."""
+    if value is None or isinstance(value, bool):
+        return ""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return "" if number == 0 else repr(number)
 
 
 class NetworkWidget(BaseWidget):
@@ -23,6 +70,8 @@ class NetworkWidget(BaseWidget):
         self.name = "network_args"
         self.lycoris = False
         self.network_args: list[OptimizerItem] = []
+        # True while network_args["wd_on_output"] is the one the DoRA on output box wrote (a free row's stays)
+        self._wd_on_output_written = False
 
         self.setup_widget()
         self.setup_connections()
@@ -81,10 +130,78 @@ class NetworkWidget(BaseWidget):
         self.widget.conv_alpha_label.setToolTip(conv_alpha_tooltip)
         self.widget.conv_alpha_input.setToolTip(conv_alpha_tooltip)
 
+        # DoRA magnitude learning rate / weight decay (--learning_rate_DoRA / --weight_decay_DoRA), next to DoRA
+        self.dora_lr_label = QLabel("DoRA LR", self.widget.main_tab)
+        self.dora_lr_input = QLineEdit(self.widget.main_tab)
+        self.dora_lr_input.setObjectName("dora_lr_input")
+        self.dora_lr_input.setPlaceholderText("same as LR")
+        self.dora_wd_label = QLabel("DoRA WD", self.widget.main_tab)
+        self.dora_wd_input = QLineEdit(self.widget.main_tab)
+        self.dora_wd_input.setObjectName("dora_wd_input")
+        self.dora_wd_input.setPlaceholderText("0")
+        self.dora_wd_on_output_enable = QCheckBox("DoRA on output (wd_on_output)", self.widget.main_tab)
+        self.dora_wd_on_output_enable.setObjectName("dora_wd_on_output_enable")
+        self.dora_wd_on_output_enable.setChecked(True)  # LyCORIS default: the key is written only when unchecked
+        dora_lr_tooltip = (
+            "<html><head/><body><p>Learning rate for the DoRA magnitude parameters only (LyCORIS dora_scale). "
+            "Empty: the same learning rate as the rest. It becomes the lr of their own optimizer group exactly as "
+            "given (the lr scheduler scales it like the rest). With adaptive optimizers whose LR is a multiplier "
+            "(Prodigy, D-Adaptation, ..., usually LR 1.0) give a value on that scale (e.g. 0.5), not an AdamW-style "
+            "1e-4, which would all but freeze the magnitudes. Written only while DoRA is on. "
+            "Maps to <code>learning_rate_DoRA</code>.</p></body></html>"
+        )
+        dora_wd_tooltip = (
+            "<html><head/><body><p>Weight decay for the DoRA magnitude parameters, any number &gt;= 0 (e.g. 1e-5). "
+            "0 / empty (default, omitted): decaying a norm shrinks the base weight. Written only while DoRA is on. "
+            "Maps to <code>weight_decay_DoRA</code>.</p></body></html>"
+        )
+        dora_on_output_tooltip = (
+            "<html><head/><body><p>Checked (LyCORIS default, no key written): DoRA normalises the weight per output "
+            "channel. Unchecked writes <code>wd_on_output=False</code> to the network args: per input column, which "
+            "is what ComfyUI applies, so a MOSS-Image LoRA matches ComfyUI exactly (examples/moss uses False). "
+            "Only while DoRA is on.</p></body></html>"
+        )
+        self.dora_lr_label.setToolTip(dora_lr_tooltip)
+        self.dora_lr_input.setToolTip(dora_lr_tooltip)
+        self.dora_wd_label.setToolTip(dora_wd_tooltip)
+        self.dora_wd_input.setToolTip(dora_wd_tooltip)
+        self.dora_wd_on_output_enable.setToolTip(dora_on_output_tooltip)
+        # own row under the DoRA checkbox row (the Tucker / Train Norm / DoRA row has no room for them)
+        self.dora_row_layout = QHBoxLayout()
+        for elem in (self.dora_lr_label, self.dora_lr_input, self.dora_wd_label, self.dora_wd_input,
+                     self.dora_wd_on_output_enable):
+            self.dora_row_layout.addWidget(elem)
+        self.dora_row_layout.addStretch(1)
+        self.widget.formLayout_3.insertRow(4, self.dora_row_layout)
+        self.dora_lr_input.setEnabled(False)
+        self.dora_wd_input.setEnabled(False)
+        self.dora_wd_on_output_enable.setEnabled(False)
+
+        # --cache_caption_variants next to Cache TE Outputs (top-level key, written only when > 1)
+        self.caption_variants_label = QLabel("Caption Variants", self.widget.main_tab)
+        self.caption_variants_input = SpinBox(self.widget.main_tab)
+        self.caption_variants_input.setObjectName("caption_variants_input")
+        self.caption_variants_input.setRange(0, CAPTION_VARIANTS_MAX)
+        self.caption_variants_input.setValue(0)
+        caption_variants_tooltip = (
+            "<html><head/><body><p>Caption variants cached per image with Cache TE Outputs: shuffle, tag dropout, "
+            "caption dropout and wildcards are applied N times while caching, and one variant is picked per step. "
+            "0 or 1 = off (no key). <b>Shuffle Caption, Caption Tag Dropout or Caption Dropout Rate in a subset need "
+            "N &gt; 1</b> while the text encoder outputs are cached (MOSS-Image and Anima 3.8B always cache them); "
+            "the trainer refuses them otherwise. Only plain Anima takes Caption Dropout Rate without variants. "
+            "Token Warmup can never be used with cached outputs. "
+            "Maps to <code>cache_caption_variants</code>.</p></body></html>"
+        )
+        self.caption_variants_label.setToolTip(caption_variants_tooltip)
+        self.caption_variants_input.setToolTip(caption_variants_tooltip)
+        self.widget.horizontalLayout.addWidget(self.caption_variants_label)
+        self.widget.horizontalLayout.addWidget(self.caption_variants_input)
+        self.caption_variants_input.setEnabled(False)
+
     def setup_connections(self) -> None:
         self.widget.algo_select.currentTextChanged.connect(self.change_algo)
         self.widget.lycoris_preset_input.textChanged.connect(
-            lambda x: self.edit_network_args("preset", x, True)
+            lambda x: self.edit_network_args("preset", x.strip(), True)
         )
         self.widget.network_dim_input.valueChanged.connect(self._on_network_dim_changed)
         self.widget.conv_dim_input.valueChanged.connect(self._on_conv_dim_changed)
@@ -137,6 +254,10 @@ class NetworkWidget(BaseWidget):
         self.widget.train_blocks_selector.currentTextChanged.connect(
             lambda x: self.edit_network_args("train_blocks", x.lower())
         )
+        self.dora_lr_input.textChanged.connect(lambda _: self.change_dora_lr_wd())
+        self.dora_wd_input.textChanged.connect(lambda _: self.change_dora_lr_wd())
+        self.dora_wd_on_output_enable.clicked.connect(lambda _: self.change_dora_lr_wd())
+        self.caption_variants_input.valueChanged.connect(lambda _: self.change_caption_variants())
 
     def edit_network_args(self, name: str, value: object, optional: bool = False) -> None:
         if "network_args" not in self.args:
@@ -155,6 +276,9 @@ class NetworkWidget(BaseWidget):
         self.network_args.remove(widget)
 
     def add_network_arg(self, arg_name: str = None, arg_value: str = None):
+        # TOML values may be bool / int / float (a "k=v" list is coerced on load); the row shows them as text
+        if arg_value is not None and not isinstance(arg_value, str):
+            arg_value = str(arg_value)
         self.network_args.append(OptimizerItem(arg_name=arg_name, arg_value=arg_value))
         self.widget.network_args_item_widget.layout().addWidget(self.network_args[-1])
         self.network_args[-1].delete_item.connect(self.remove_network_arg)
@@ -264,7 +388,7 @@ class NetworkWidget(BaseWidget):
             (self.widget.algo_select.currentText().split(" ")[0].lower() if toggle else False),
             True,
         )
-        self.edit_network_args("preset", self.widget.lycoris_preset_input.text() if toggle else False, True)
+        self.edit_network_args("preset", self.widget.lycoris_preset_input.text().strip() if toggle else False, True)
         self.toggle_dora_bypass(
             self.widget.dora_enable.isChecked() if toggle_dora else False,
             self.widget.bypass_mode_enable.isChecked(),
@@ -342,6 +466,17 @@ class NetworkWidget(BaseWidget):
             self.widget.cache_te_to_disk_enable.isChecked() if checked else False,
             True,
         )
+        self.change_caption_variants()
+
+    def change_caption_variants(self) -> None:
+        """cache_caption_variants: only with cached TE outputs, omitted at 0 and 1 (both mean off)."""
+        active = bool(self.args.get("cache_text_encoder_outputs"))
+        self.caption_variants_input.setEnabled(active)
+        if "cache_caption_variants" in self.args:
+            del self.args["cache_caption_variants"]
+        value = self.caption_variants_input.value()
+        if active and value > 1:
+            self.args["cache_caption_variants"] = value
 
     def enable_disable_rank_dropout(self, checked: bool) -> None:
         if "network_args" in self.args and "rank_dropout" in self.args["network_args"]:
@@ -374,6 +509,51 @@ class NetworkWidget(BaseWidget):
             self.widget.algo_select.currentText().lower() != "ia3",
             dora and self.widget.dora_enable.isEnabled(),
         )
+        self.change_dora_lr_wd()
+
+    def dora_written(self) -> bool:
+        """DoRA is on in what is written (network_args dora_wd), not only in the checkbox."""
+        return bool(self.args.get("network_args", {}).get("dora_wd"))
+
+    def change_dora_lr_wd(self) -> None:
+        """DoRA lr / weight decay (top-level) and wd_on_output (network arg): only while dora_wd is written
+        (lr omitted when empty, wd at 0, wd_on_output while checked = the LyCORIS default)."""
+        active = self.dora_written()
+        self.dora_lr_input.setEnabled(active)
+        self.dora_wd_input.setEnabled(active)
+        self.dora_wd_on_output_enable.setEnabled(active)
+        for key in DORA_KEYS:
+            if key in self.args:
+                del self.args[key]
+        # The box owns wd_on_output while DoRA is written; otherwise remove only the key the box wrote itself, so a
+        # wd_on_output row the user added without DoRA stays in the args (it stays on screen too).
+        if (active or self._wd_on_output_written) and "wd_on_output" in self.args.get("network_args", {}):
+            del self.args["network_args"]["wd_on_output"]
+        self._wd_on_output_written = False
+        text = self.dora_lr_input.text().strip()
+        learning_rate = parse_dora_lr(text)
+        self.dora_lr_input.setStyleSheet(INVALID_LINE_STYLE if active and text and learning_rate is None else "")
+        weight_decay = parse_dora_wd(self.dora_wd_input.text())
+        self.dora_wd_input.setStyleSheet(INVALID_LINE_STYLE if active and weight_decay is None else "")
+        if not active:
+            return
+        if learning_rate is not None:
+            self.args["learning_rate_DoRA"] = learning_rate
+        if weight_decay:
+            self.args["weight_decay_DoRA"] = weight_decay
+        if not self.dora_wd_on_output_enable.isChecked():
+            self.edit_network_args("wd_on_output", False)
+            self._wd_on_output_written = True
+
+    def get_validation_errors(self) -> list[str]:
+        errors = []
+        text = self.dora_lr_input.text().strip()
+        if self.dora_lr_input.isEnabled() and text and parse_dora_lr(text) is None:
+            errors.append(f"Network Args: DoRA LR must be a positive number or empty (got '{text}')")
+        text = self.dora_wd_input.text().strip()
+        if self.dora_wd_input.isEnabled() and parse_dora_wd(text) is None:
+            errors.append(f"Network Args: DoRA WD must be a number >= 0 or empty (got '{text}')")
+        return errors
 
     def enable_disable_module_dropout(self, checked: bool) -> None:
         if "network_args" in self.args and "module_dropout" in self.args["network_args"]:
@@ -497,7 +677,7 @@ class NetworkWidget(BaseWidget):
             self.widget.algo_select.setCurrentIndex(0)
 
         # update element inputs
-        self.widget.lycoris_preset_input.setText(network_args.get("preset", ""))
+        self.widget.lycoris_preset_input.setText(str(network_args.get("preset", "")).strip())
         self.widget.network_dim_input.setValue(args.get("network_dim", self.DEFAULTS["network_dim"]))
         self.widget.conv_dim_input.setValue(network_args.get("conv_dim", 16))
         if self.widget.algo_select.currentText().lower() in {"gora", "ralora"}:
@@ -532,6 +712,16 @@ class NetworkWidget(BaseWidget):
         self.widget.cp_enable.setChecked(network_args.get("use_tucker", False))
         self.widget.train_norm_enable.setChecked(network_args.get("train_norm", False))
         self.widget.dora_enable.setChecked(network_args.get("dora_wd", False))
+        dora_lr = args.get("learning_rate_DoRA", args.get("learning_rate_dora"))
+        self.dora_lr_input.setText("" if dora_lr is None else str(dora_lr))
+        self.dora_wd_input.setText(dora_number_text(args.get("weight_decay_DoRA", args.get("weight_decay_dora"))))
+        self.dora_wd_on_output_enable.setChecked(
+            "wd_on_output" not in network_args or str_bool(network_args.get("wd_on_output"))
+        )
+        caption_variants = args.get("cache_caption_variants", 0)
+        if isinstance(caption_variants, bool) or not isinstance(caption_variants, int):
+            caption_variants = 0
+        self.caption_variants_input.setValue(caption_variants)
         self.widget.ip_gamma_enable.setChecked(bool(args.get("ip_noise_gamma", False)))
         self.widget.ip_gamma_input.setValue(args.get("ip_noise_gamma", 0.1))
         self.widget.rescale_enable.setChecked(network_args.get("rescaled", False))
@@ -605,6 +795,8 @@ class NetworkWidget(BaseWidget):
             "conv_block_dims",
             "conv_block_alphas",
         ]
+        if self.dora_written():
+            skip_list.append("wd_on_output")  # shown by the DoRA on output box; stays a free row without DoRA
         for _ in range(len(self.network_args)):
             self.remove_network_arg(self.network_args[0])
 
@@ -613,3 +805,5 @@ class NetworkWidget(BaseWidget):
                 continue
             self.add_network_arg(arg, value)
             self.modify_network_arg(self.network_args[-1])
+        # removing the previous rows may have dropped a wd_on_output the DoRA on output box owns: write it again
+        self.change_dora_lr_wd()

@@ -1,3 +1,4 @@
+import contextlib
 from PySide6 import QtWidgets
 from modules.CollapsibleWidget import CollapsibleWidget
 from modules.DragDropLineEdit import DragDropLineEdit
@@ -5,6 +6,17 @@ from pathlib import Path
 
 
 _SENTINEL = object()
+
+
+@contextlib.contextmanager
+def signals_blocked(widgets):
+    """Block the signals of these widgets while loading values into them (restores the previous state)."""
+    previous = [widget.blockSignals(True) for widget in widgets]
+    try:
+        yield
+    finally:
+        for widget, state in zip(widgets, previous):
+            widget.blockSignals(state)
 
 
 class BaseWidget(QtWidgets.QWidget):

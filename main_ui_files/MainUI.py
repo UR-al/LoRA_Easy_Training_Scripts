@@ -13,9 +13,27 @@ from pathlib import Path
 from threading import Thread
 from PySide6.QtCore import Signal
 import requests
+import toml
 from requests.exceptions import ConnectionError
 from time import sleep
 import shutil
+
+
+class TomlLoadError(Exception):
+    """A TOML that cannot be loaded into the GUI (missing, unreadable, or not a GUI TOML)."""
+
+
+def backend_error_text(response) -> str:
+    """The backend's /validate errors (a JSON list, or a dict with "detail") as text for a message box."""
+    try:
+        body = response.json()
+    except ValueError:
+        return response.text or f"HTTP {response.status_code}"
+    if isinstance(body, list):
+        return "\n".join(str(item) for item in body) or f"HTTP {response.status_code}"
+    if isinstance(body, dict) and "detail" in body:
+        return str(body["detail"])
+    return str(body)
 
 
 class MainWidget(QWidget):
@@ -79,6 +97,9 @@ class MainWidget(QWidget):
         bucket_widget.widget.min_input.valueChanged.connect(lambda: self.sync_subset_inherited_args())
         bucket_widget.widget.max_input.valueChanged.connect(lambda: self.sync_subset_inherited_args())
         self.queue_widget.saveQueue.connect(lambda x: self.save_toml(Path(x)))
+        self.queue_widget.save_handler = lambda x: self.save_toml(
+            Path(x), failure_note="The queue item was not added."
+        )
         self.queue_widget.loadQueue.connect(lambda x: self.load_toml(Path(x)))
         self.begin_training_button.clicked.connect(self.start_training)
         self.backend_url_input.editingFinished.connect(self.update_url)
@@ -124,14 +145,60 @@ class MainWidget(QWidget):
         subset_args = self.subset_widget.dataset_args
         return base_args, subset_args
 
-    def save_toml(self, file_name: Path | None = None) -> None:
-        validation_errors = self.args_widget.get_validation_errors()
+    def get_validation_errors(self) -> list[str]:
+        """Args errors plus rules that need the subsets too."""
+        errors = self.args_widget.get_validation_errors()
+        errors.extend(self.caption_rule_errors())
+        return errors
+
+    def caption_rule_errors(self) -> list[str]:
+        """Subset caption options the trainers refuse while the text encoder outputs are cached."""
+        aw = self.args_widget
+        network_args = aw.network_widget.args
+        extra = aw.extra_args_widget.args
+        anima_on = aw.anima_widget._anima_on()
+        anima38_on = anima_on and aw.anima_widget.widget.anima38_box.isChecked()
+        # the *_to_disk flag turns caching on by itself (MOSS-Image / Anima 3.8B without either flag get their own
+        # "needs Cache TE Outputs" error)
+        cached = any(
+            source.get(key) for source in (network_args, extra)
+            for key in ("cache_text_encoder_outputs", "cache_text_encoder_outputs_to_disk")
+        )
+        if not cached:
+            return []
+        variants = network_args.get("cache_caption_variants", 0)
+        # plain Anima keeps caption dropout with cached outputs (it applies it at each step); SDXL, Flux, MOSS-Image
+        # and Anima 3.8B refuse it without caption variants
+        dropout_needs_variants = not (anima_on and not anima38_on)
+        errors = []
+        for name, subset in self.subset_widget.dataset_args.items():
+            if variants <= 1:
+                used = [label for key, label in (("shuffle_caption", "Shuffle Caption"),
+                                                 ("caption_tag_dropout_rate", "Caption Tag Dropout"))
+                        if subset.get(key)]
+                if dropout_needs_variants and (subset.get("caption_dropout_rate") or 0) > 0:
+                    used.append("Caption Dropout Rate")
+                if used:
+                    errors.append(
+                        f"Subset '{name}': {' / '.join(used)} with Cache TE Outputs needs Caption Variants > 1 "
+                        "(Network Args); the trainer refuses it otherwise"
+                    )
+            if (subset.get("token_warmup_step") or 0) > 0:
+                errors.append(
+                    f"Subset '{name}': Token Warmup cannot be used with Cache TE Outputs (the caption changes with the "
+                    "step, so it can never be cached); switch one of them off"
+                )
+        return errors
+
+    def save_toml(self, file_name: Path | None = None, failure_note: str = "") -> bool:
+        """Save the args as a GUI TOML. False when nothing was written (invalid args or a cancelled dialog)."""
+        validation_errors = self.get_validation_errors()
         if validation_errors:
-            message = "\n".join(validation_errors)
-            self.training_warning.emit("Invalid Extra Args", message)
-            print("Cannot save TOML while extra args lack values:")
+            message = "\n".join(validation_errors + ([failure_note] if failure_note else []))
+            self.training_warning.emit("Invalid Args", message)
+            print("Cannot save TOML while args are invalid:")
             print(message)
-            return
+            return False
         args, subset_args = self.get_args()
         new_args = {arg: {"args": val} for arg, val in args["args"].items()}
         for arg, val in args["dataset"].items():
@@ -141,10 +208,14 @@ class MainWidget(QWidget):
                 new_args[arg] = {"dataset_args": val}
         new_args["subsets"] = list(subset_args.values())
         new_args["train_mode"] = {"train_mode": self.train_mode.value}
-        TomlFunctions.save_toml(new_args, file_name)
+        return bool(TomlFunctions.save_toml(new_args, file_name))
 
     def load_toml(self, file_name: Path | None = None) -> None:
-        args, dataset_args, train_mode = self.process_toml(file_name)
+        try:
+            args, dataset_args, train_mode = self.process_toml(file_name)
+        except TomlLoadError as e:
+            self.training_warning.emit("Cannot load TOML", str(e))
+            return
         if not args and not dataset_args:
             return
         if train_mode == TrainingModes.LORA:
@@ -154,6 +225,8 @@ class MainWidget(QWidget):
         self.args_widget.load_args(args, dataset_args)
         self.subset_widget.load_dataset_args(dataset_args)
         self.sync_subset_inherited_args()
+        if self.args_widget.load_warnings:
+            self.training_warning.emit("TOML loaded with changes", "\n\n".join(self.args_widget.load_warnings))
 
     def set_train_lora(self) -> None:
         if self.train_mode != TrainingModes.LORA:
@@ -166,9 +239,19 @@ class MainWidget(QWidget):
             self.args_widget.set_ti_training()
 
     def process_toml(self, file_name: Path | None = None) -> tuple[dict, dict]:
-        loaded_args = TomlFunctions.load_toml(file_name)
+        """(args, dataset_args, train_mode) of a GUI TOML; raises TomlLoadError for a file that is missing, broken or
+        not a GUI TOML (a flat trainer config)."""
+        if file_name and not Path(file_name).exists():
+            raise TomlLoadError(f"{file_name} does not exist.")
+        try:
+            loaded_args = TomlFunctions.load_toml(file_name)
+        except (toml.TomlDecodeError, UnicodeDecodeError) as e:
+            raise TomlLoadError(f"{file_name or 'The file'} is not a readable TOML file:\n{e}") from None
         if not loaded_args:
             return {}, {}, self.train_mode
+        problem = TomlFunctions.gui_toml_problem(loaded_args)
+        if problem:
+            raise TomlLoadError(problem)
         args = {}
         dataset_args = {}
         if "subsets" in loaded_args:
@@ -192,11 +275,11 @@ class MainWidget(QWidget):
                 requests.get(f"{self.backend_url_input.text()}/stop_training")
             self.begin_training_button.setText("Start Training")
             return
-        validation_errors = self.args_widget.get_validation_errors()
+        validation_errors = self.get_validation_errors()
         if validation_errors:
             error_text = "\n".join(validation_errors)
-            QtWidgets.QMessageBox.warning(self, "Invalid Extra Args", error_text)
-            print("Training blocked until extra args are fixed:")
+            QtWidgets.QMessageBox.warning(self, "Invalid Args", error_text)
+            print("Training blocked until the args are fixed:")
             print(error_text)
             return
         self.training_thread = Thread(target=self.start_training_thread)
@@ -221,7 +304,11 @@ class MainWidget(QWidget):
         self.begin_training_button.setText("Start Training")
 
     def train_helper(self, url: str, train_toml: Path) -> bool:
-        args, dataset_args, train_mode = self.process_toml(train_toml)
+        try:
+            args, dataset_args, train_mode = self.process_toml(train_toml)
+        except TomlLoadError as e:
+            self.training_error.emit("Cannot train this item", f"{e}\n\nIts args were probably invalid when saved.")
+            return False
         config = json.loads(Path("config.json").read_text())
 
         # Include accelerate settings in validation request for proper warmup step calculation
@@ -242,6 +329,7 @@ class MainWidget(QWidget):
             return False
         if response.status_code != 200:
             print(f"Item Failed: {response.text}")
+            self.training_error.emit("Backend validation failed", backend_error_text(response))
             return False
         validation_data = response.json()
         if args.get("saving_args", {}).get("tag_occurrence", None):
@@ -262,6 +350,7 @@ class MainWidget(QWidget):
         is_sdxl = str(args.get("general_args").get("sdxl", False))
         is_flux = str(bool(args.get("flux_args")))
         is_anima = str(bool(args.get("anima_args")))
+        is_moss = str(bool(args.get("moss_args")))
 
         # Build train params including accelerate settings
         train_params = {
@@ -269,6 +358,7 @@ class MainWidget(QWidget):
             "sdxl": is_sdxl,
             "flux": is_flux,
             "anima": is_anima,
+            "moss": is_moss,
         }
 
         # Add accelerate settings if enabled

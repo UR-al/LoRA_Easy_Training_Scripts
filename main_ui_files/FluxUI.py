@@ -79,7 +79,7 @@ class FluxWidget(BaseWidget):
     def enable_disable(self, checked: bool) -> None:
         self.args = {}
         self.Toggled.emit(checked)
-        if not checked:
+        if not checked or not self.widget.flux_training_box.isEnabled():  # disabled by another model type: no args
             return
         self.edit_args("ae", self.widget.ae_model_input.text())
         self.edit_args("clip_l", self.widget.clip_l_model_input.text())
