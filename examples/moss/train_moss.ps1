@@ -10,6 +10,8 @@ if ($args.Count -gt 2) {
     $network_args = $args[2..($args.Count - 1)]
 }
 
+# UTF-8 output: the trainer prints Japanese / Korean text, which fails in the ANSI code page when stdout is redirected
+$env:PYTHONIOENCODING = "utf-8"
 .\backend\sd_scripts\venv\Scripts\Activate.ps1
 
 accelerate launch `

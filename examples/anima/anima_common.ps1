@@ -183,6 +183,10 @@ function Invoke-AnimaTraining([string]$Model, [object[]]$Arguments) {
 
     # run from the repo root: relative paths in the configs and dataset TOMLs are resolved from there
     $exitCode = 1
+    # The trainer prints Japanese / Korean text. With stdout redirected (a log file, the GUI, a scheduled task) Python
+    # would encode it in the ANSI code page and stop with UnicodeEncodeError; UTF-8 output works everywhere.
+    $savedIoEncoding = $env:PYTHONIOENCODING
+    $env:PYTHONIOENCODING = "utf-8"
     Push-Location -LiteralPath $AnimaRepoRoot
     try {
         & $activate
@@ -200,6 +204,7 @@ function Invoke-AnimaTraining([string]$Model, [object[]]$Arguments) {
         if ($null -eq $exitCode) { $exitCode = 1 }
     } finally {
         Pop-Location
+        $env:PYTHONIOENCODING = $savedIoEncoding
     }
     exit $exitCode
 }
