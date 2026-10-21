@@ -1,5 +1,5 @@
 # MOSS-Image (OpenMOSS) LoRA / LyCORIS training config (example). Run from the repo root with
-#   .\examples\moss	rain_moss.ps1 <dataset_config.toml> <output_name>   (backend\sd_scripts\moss_train_network.py)
+#   .\examples\moss\train_moss.ps1 <dataset_config.toml> <output_name>   (backend\sd_scripts\moss_train_network.py)
 # Replace every path/to/... below.
 # Same style as config_anima38.toml; MOSS-specific keys are marked [moss].
 # Model: train on Base (the official guide leaves Base without post-training for LoRAs); the LoRA also loads on SFT.

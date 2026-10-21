@@ -1,0 +1,129 @@
+# Anima-3.8B v1.1 LoRA (LyCORIS LoKr + DoRA) training config (example). Run from the repo root with
+#   .\examples\anima\train_anima38.ps1 <dataset_config.toml> <output_name>   (backend\sd_scripts\anima_train_network.py)
+# Model: the v1.1 bundle (52-block DiT + llm_adapter + Semantic Connector v2) with Qwen3-0.6B, Qwen3.5-4B and the Qwen-Image VAE.
+# The launcher passes every model path from examples\anima\models.ps1 on the command line (the command line wins over
+# this file), so the model paths below are only the defaults for running the trainer by hand from the repo root.
+# Same recipe as config_anima_base.toml / config_anima29.toml; 3.8B-only keys are marked [anima38].
+# Batch size and resolution live in the dataset TOML (see dataset_example.toml), not here.
+# First run: Qwen3.5-4B is loaded once to cache text features for every caption variant (*_anima38_te.npz next to
+# each image); later runs reuse the cache. Editing a caption .txt re-caches that image only.
+
+strict_config_keys = true  # a key that names no option (a typo) stops the run; without this it is only a warning
+seed = 1234
+max_data_loader_n_workers = 5
+persistent_data_loader_workers = true
+xformers = false
+prior_loss_weight = 1.0
+cache_latents = true
+cache_latents_to_disk = true  # <image>_<W>x<H>_anima.npz next to each image
+gradient_checkpointing = true
+gradient_accumulation_steps = 4
+unsloth_offload_checkpointing = true  # [anima38] offload checkpointed activations to CPU RAM: 3.8B is tight on a 32 GB card.
+                                      # Slower; cannot be combined with blocks_to_swap. If VRAM still runs out, drop the 2048 tier of the
+                                      # dataset TOML or set use_ramtorch = true.
+max_train_epochs = 30
+mixed_precision = "bf16"
+no_half_vae = false
+lowram = false
+vae_batch_size = 1
+
+min_timestep = 0
+max_timestep = 1000
+network_dim = 10000  # LoKr with full_matrix=True: full-size factors; alpha = dim keeps the scale at 1
+network_alpha = 10000
+network_train_unet_only = true
+network_module = "lycoris.kohya"
+network_args = [
+  "algo=lokr",
+  "preset=anima",  # [anima38] the LoRA covers all 52 blocks (Forge needs all of them); do not add include_patterns
+  "full_matrix=True",
+  "factor=4",
+  "use_tucker=False",
+  "train_norm=False",
+  "dora_wd=True",
+  "wd_on_output=True",
+  "rescaled=False",
+  "use_scalar=False",
+  "bypass_mode=False",
+  "enable_conv=False",
+  "train_llm_adapter=False",
+  "decompose_both=False",
+  "torch_compile=False",
+  "dropout=0.0",
+  "rank_dropout=0.0",
+  "module_dropout=0.0",
+]
+
+max_grad_norm = 1.0
+lr_scheduler_num_cycles = 1
+lr_scheduler = "constant_with_warmup"
+lr_warmup_steps = 50
+optimizer_type = "AdamW"
+learning_rate = 2e-5
+loss_type = "l2"
+optimizer_args = [
+  "weight_decay=0.01",
+  "betas=(0.9, 0.99)",
+  "eps=1e-8",
+  "fused=True",
+]
+
+save_model_as = "safetensors"
+output_dir = "output/ANIMA"  # the launcher sets output\ANIMA\<output_name>
+save_state = true  # resume with --resume=output\ANIMA\<name>\<name>-00000N-state
+save_last_n_epochs_state = 2
+save_every_n_epochs = 1
+save_precision = "fp16"
+
+sample_at_first = true
+sample_sampler = "euler"
+sample_every_n_epochs = 1
+sample_prompts = "examples/anima/sample_anima.txt"
+
+resize_interpolation = "lanczos"
+qwen3_max_token_length = 512
+t5_max_token_length = 512
+pretrained_model_name_or_path = "models/Stable-diffusion/Anima-3.8B-v1.1.safetensors"  # [anima38] v1.1 bundle
+qwen3 = "models/text_encoder/qwen_3_06b_base.safetensors"
+vae = "models/VAE/qwen_image_vae.safetensors"
+timestep_sampling = "sigmoid"
+sigmoid_scale = 1.3
+ip_noise_gamma = 0.05
+vae_disable_cache = true
+attn_mode = "flash"  # flash-attn (installed by install.bat on Windows / Python 3.11); "torch" = PyTorch SDPA
+split_attn = false
+blocks_to_swap = 0
+# Speed switches. The values below are the defaults; each one trades speed for VRAM or turns an optimization off.
+use_ramtorch = false  # true: keep block attention/MLP weights in CPU RAM and stream them in every step (much less VRAM, a bit slower)
+anima_no_compile = false  # false: torch.compile the elementwise block ops (faster); true turns it off
+anima_no_lokr_compile = false  # false: also compile the LoKr+DoRA weight rebuild (lower fixed cost per step); true turns it off
+anima_stock_lycoris = false  # true: use the stock LyCORIS LoKr forward (same result, slower)
+anima_no_sample_cache = false  # true: no merged-weight cache while sampling (same result, slower)
+weighting_scheme = "uniform"
+
+anima38_connector = true  # [anima38] frozen Semantic Connector v2 replaces the llm_adapter output at every step, as in Forge.
+                          # It stays in VRAM (bf16), is not trained and is not part of the LoRA. Required for this bundle.
+qwen35_path = "models/text_encoder/qwen35_4b.safetensors"  # [anima38] Qwen3.5-4B encoder; on the GPU only while caching
+qwen35_tokenizer_dir = "models/qwen35_tokenizer"  # [anima38] folder with Qwen3.5 tokenizer.json + tokenizer_config.json
+anima38_sample_negative = "connector"  # [anima38] negative prompt of training samples through the connector; "native" = Forge default
+text_encoder_batch_size = 1
+anima38_qwen35_batch_size = 1  # [anima38] 1 = one caption per call, no padding (bit-identical to Forge); larger caches faster
+cache_text_encoder_outputs = true  # [anima38] required
+cache_text_encoder_outputs_to_disk = true  # [anima38] <image>_anima38_te.npz next to each image
+cache_caption_variants = 16  # shuffle_caption = true needs caption variants when text encoder outputs are cached
+
+edm2_loss_weighting = false
+
+enable_bucket = true
+# min_bucket_reso / max_bucket_reso: ignored while bucket_no_upscale = true (buckets follow each image's size, and the
+# trainer logs one "min_bucket_reso and max_bucket_reso are ignored" warning per dataset tier). Kept as in the recipe.
+min_bucket_reso = 256
+bucket_reso_steps = 16
+bucket_no_upscale = true
+multires_training = false
+max_bucket_reso = 4096
+
+shuffle_caption = true
+keep_tokens_separator = "|||"  # tags before ||| stay in place when captions are shuffled (put the trigger there)
+caption_tag_dropout_rate = 0.0
+caption_dropout_rate = 0.0

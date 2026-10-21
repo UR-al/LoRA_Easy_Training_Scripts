@@ -188,3 +188,10 @@ config.json
 .zoo/
 .roomodes
 /plans
+
+# examples/anima, examples/moss: local models, datasets and training output
+/models/
+/datasets/
+/output/
+# examples/anima: per-user model paths (see examples/anima/README.md)
+/examples/anima/models.local.ps1

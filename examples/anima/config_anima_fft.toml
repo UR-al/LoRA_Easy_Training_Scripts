@@ -1,0 +1,100 @@
+# Anima base 1.0 full fine-tune config (example) for backend\sd_scripts\anima_train.py (flat TOML, no network args).
+# EXPERIMENTAL: unlike the LoRA configs, this recipe is not yet validated end to end on a 32 GB card and its
+# hyperparameters are not final. Treat it as a starting point.
+# Run from the repo root with
+#   .\examples\anima\train_anima_fft.ps1 <dataset_config.toml> <output_name>
+# The launcher passes every model path from examples\anima\models.ps1 on the command line (the command line wins over
+# this file), so the model paths below are only the defaults for running the trainer by hand from the repo root.
+# Result: output\ANIMA\<name>\<name>-00000N.safetensors, DiT weights only (load it as a checkpoint in Forge / ComfyUI).
+# Memory: fp32 master weights + AdamW8bit + activation offload; plan for a 32 GB card and plenty of CPU RAM and disk
+# (a saved state with optimizer is many GB per epoch).
+
+strict_config_keys = true  # a key that names no option (a typo) stops the run; without this it is only a warning
+
+# ---- models (overridden by the launcher) ----
+pretrained_model_name_or_path = "models/Stable-diffusion/anima-base-v1.0.safetensors"
+qwen3 = "models/text_encoder/qwen_3_06b_base.safetensors"
+vae = "models/VAE/qwen_image_vae.safetensors"
+qwen3_max_token_length = 512
+t5_max_token_length = 512
+
+# ---- precision / memory ----
+mixed_precision = "bf16"
+# full_bf16 = true keeps weights, grads and optimizer state in bf16; only safe with an optimizer that does stochastic
+# rounding. AdamW8bit does not, so small updates would round away: keep fp32 master weights here.
+full_bf16 = false
+full_fp16 = false
+gradient_checkpointing = true
+unsloth_offload_checkpointing = true  # offload checkpointed activations to CPU RAM; cannot be combined with blocks_to_swap
+blocks_to_swap = 0
+gradient_accumulation_steps = 1
+lowram = false
+highvram = false
+seed = 42
+max_data_loader_n_workers = 5
+persistent_data_loader_workers = true
+
+# ---- caches ----
+cache_latents = true
+cache_latents_to_disk = true  # <image>_<W>x<H>_anima.npz next to each image (same cache as LoRA training)
+vae_batch_size = 5
+vae_disable_cache = true
+# Text encoder outputs are not cached so that shuffle_caption and caption_tag_dropout_rate apply every step;
+# Qwen3-0.6B stays on the GPU.
+cache_text_encoder_outputs = false
+cache_text_encoder_outputs_to_disk = false
+
+# ---- attention ----
+attn_mode = "flash"  # flash-attn (installed by install.bat on Windows / Python 3.11); "torch" = PyTorch SDPA
+split_attn = false
+
+# ---- timesteps / loss ----
+timestep_sampling = "sigmoid"
+sigmoid_scale = 1.3
+discrete_flow_shift = 3.0
+weighting_scheme = "uniform"
+logit_mean = 0.0
+logit_std = 1.0
+loss_type = "l2"
+
+# ---- optimizer / scheduler ----
+optimizer_type = "AdamW8bit"
+learning_rate = 2e-5
+llm_adapter_lr = 0.0  # 0 = the llm_adapter stays frozen
+max_grad_norm = 1.0
+optimizer_args = [
+  "weight_decay=0.01",
+]
+lr_scheduler = "cosine_with_min_lr"
+lr_scheduler_num_cycles = 1
+lr_warmup_steps = 50
+lr_scheduler_min_lr_ratio = 0.1
+max_train_epochs = 20  # overrides max_train_steps
+
+# ---- saving ----
+output_dir = "output/ANIMA"  # the launcher sets output\ANIMA\<output_name>
+output_name = "anima_fft"  # the launcher sets it to <output_name>
+save_model_as = "safetensors"  # always safetensors
+save_precision = "bf16"  # DiT-only checkpoint; "float" keeps full fp32 precision (twice the size), e.g. for LoRA extraction
+save_every_n_epochs = 1
+save_state = true  # weights + optimizer state each epoch, for --resume
+save_last_n_epochs_state = 1
+
+# ---- samples ----
+sample_every_n_epochs = 1
+sample_prompts = "examples/anima/sample_anima.txt"
+# Anima samples with a fixed Euler sampler. Line options: --w --h --s (steps) --l (CFG) --d (seed) --n (negative) --fs (flow shift)
+
+# ---- dataset defaults (values in the dataset TOML win) ----
+enable_bucket = true
+# min_bucket_reso / max_bucket_reso: ignored while bucket_no_upscale = true (buckets follow each image's size, and the
+# trainer logs one "min_bucket_reso and max_bucket_reso are ignored" warning per dataset tier). Kept as in the recipe.
+min_bucket_reso = 256
+max_bucket_reso = 4096
+bucket_reso_steps = 64
+bucket_no_upscale = true
+multires_training = false
+shuffle_caption = true
+keep_tokens_separator = "|||"
+caption_tag_dropout_rate = 0.2
+caption_dropout_rate = 0.0

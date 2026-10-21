@@ -1,0 +1,86 @@
+# Anima dataset config (example) for the train_anima*.ps1 launchers: copy it into datasets\ (git-ignored), rename it
+# and edit image_dir / num_repeats:
+#   .\examples\anima\train_anima29.ps1 .\datasets\my_dataset.toml my_lora
+# Relative image_dir paths are resolved from the repo root (the launchers run the trainer there); absolute paths work too.
+# Use single quotes for paths ('...' is a TOML literal string: backslashes stay as they are).
+# Save this file and the captions as UTF-8 without BOM (the launcher refuses a dataset TOML with a BOM).
+#
+# Every image folder holds the images plus one caption file per image with the same name (001.png + 001.txt).
+# Caption format: "@your_trigger ||| tag, tag, tag, ..." - tags before ||| stay first, the rest is shuffled every epoch.
+#
+# Layout: the same subsets are trained in four resolution tiers. A tier skips images whose pixel area is at most its
+# skip_image_resolution, so a large image is trained at every tier its size reaches and a small one only in the low tiers.
+# bucket_no_upscale = true never enlarges an image. To train at one resolution only, keep a single [[datasets]] block.
+#
+# Steps per epoch = (sum over tiers of images in the tier x num_repeats) / batch_size / gradient_accumulation_steps
+# (4 in the LoRA configs). Example: 200 image repeats per epoch / 1 / 4 = 50 steps; 30 epochs = 1500 steps.
+# batch_size is already 1 in every tier: if VRAM runs out, drop the 2048 tier (then the 1536 tier).
+
+[general]
+enable_bucket = true
+bucket_no_upscale = true
+shuffle_caption = true
+keep_tokens_separator = "|||"
+
+# ---- 2048 tier: only images larger than 1536 x 1536 ----
+[[datasets]]
+resolution = [2048, 2048]
+skip_image_resolution = [1536, 1536]
+batch_size = 1
+
+  [[datasets.subsets]]
+  image_dir = 'datasets/my_style/best'  # your strongest images: more repeats
+  caption_extension = '.txt'
+  num_repeats = 2
+
+  [[datasets.subsets]]
+  image_dir = 'datasets/my_style/rest'
+  caption_extension = '.txt'
+  num_repeats = 1
+
+# ---- 1536 tier: images larger than 1024 x 1024 ----
+[[datasets]]
+resolution = [1536, 1536]
+skip_image_resolution = [1024, 1024]
+batch_size = 1
+
+  [[datasets.subsets]]
+  image_dir = 'datasets/my_style/best'
+  caption_extension = '.txt'
+  num_repeats = 2
+
+  [[datasets.subsets]]
+  image_dir = 'datasets/my_style/rest'
+  caption_extension = '.txt'
+  num_repeats = 1
+
+# ---- 1024 tier: images larger than 512 x 512 ----
+[[datasets]]
+resolution = [1024, 1024]
+skip_image_resolution = [512, 512]
+batch_size = 1
+
+  [[datasets.subsets]]
+  image_dir = 'datasets/my_style/best'
+  caption_extension = '.txt'
+  num_repeats = 2
+
+  [[datasets.subsets]]
+  image_dir = 'datasets/my_style/rest'
+  caption_extension = '.txt'
+  num_repeats = 1
+
+# ---- 512 tier: every image ----
+[[datasets]]
+resolution = [512, 512]
+batch_size = 1
+
+  [[datasets.subsets]]
+  image_dir = 'datasets/my_style/best'
+  caption_extension = '.txt'
+  num_repeats = 2
+
+  [[datasets.subsets]]
+  image_dir = 'datasets/my_style/rest'
+  caption_extension = '.txt'
+  num_repeats = 1
