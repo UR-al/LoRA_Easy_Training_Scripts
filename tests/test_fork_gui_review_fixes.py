@@ -238,12 +238,15 @@ class MossLycorisPresetTest(unittest.TestCase):
     def test_prefilled_and_restored(self):
         moss = moss_on(self.aw)
         self.assertEqual(self.preset.text(), "moss")
+        self.assertEqual(self.preset.currentText(), "moss")  # the listed entry, not custom text
+        self.assertFalse(self.preset.is_custom())
         self.assertNotIn("preset", self.n.args.get("network_args", {}))  # kohya LoRA: no preset key
         self.n.widget.algo_select.setCurrentText("Lokr")
         self.assertEqual(self.n.args["network_args"]["preset"], "moss")
         self.assertEqual(self.aw.get_validation_errors(), [])
         click(moss.widget.moss_training_box, False)
         self.assertEqual(self.preset.text(), "")
+        self.assertEqual(self.preset.currentText(), "(default)")
         self.assertNotIn("preset", self.n.args["network_args"])
 
     def test_typed_preset_is_kept(self):
@@ -815,11 +818,13 @@ class VerifyFindingsTest(unittest.TestCase):
         n.widget.algo_select.setCurrentText("Lokr")
         n.widget.lycoris_preset_input.setText("  moss ")
         self.assertEqual(n.args["network_args"]["preset"], "moss")
+        self.assertEqual(n.widget.lycoris_preset_input.currentText(), "moss")
         n.widget.algo_select.setCurrentText("LoHa")  # change_algo writes it again
         self.assertEqual(n.args["network_args"]["preset"], "moss")
         loaded = NetworkWidget()
         loaded.load_args({"network_args": {"network_dim": 8, "network_args": {"algo": "lokr", "preset": " full "}}})
         self.assertEqual(loaded.widget.lycoris_preset_input.text(), "full")
+        self.assertEqual(loaded.widget.lycoris_preset_input.currentText(), "full")  # the listed entry
         self.assertEqual(loaded.args["network_args"]["preset"], "full")
         aw = ArgsWidget()  # the MOSS switch writes it through its own path
         aw.network_widget.widget.algo_select.setCurrentText("Lokr")

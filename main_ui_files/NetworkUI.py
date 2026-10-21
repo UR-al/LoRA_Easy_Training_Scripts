@@ -79,6 +79,8 @@ class NetworkWidget(BaseWidget):
     def setup_widget(self) -> None:
         super().setup_widget()
         self.widget.setupUi(self.content)
+        # the preset drop-down describes its groups; the label next to it says the same
+        self.widget.label.setToolTip(self.widget.lycoris_preset_input.toolTip())
         self.block_widgets: list[tuple[CollapsibleWidget, BlockWidget | BlockWeightWidget]] = [
             (self.widget.block_weight_widget, BlockWeightWidget()),
             (

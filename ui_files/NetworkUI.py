@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QFormLayout, QGridLayout
 
 from modules.CollapsibleWidget import CollapsibleWidget
 from modules.LineEditHighlight import LineEditWithHighlight
+from modules.PresetComboBox import PresetComboBox
 from modules.ScrollOnSelect import (ComboBox, DoubleSpinBox, SpinBox, TabView)
 
 class Ui_network_ui(object):
@@ -351,7 +352,7 @@ class Ui_network_ui(object):
 
         self.gridLayout.addLayout(self.formLayout, 2, 0, 1, 1)
 
-        self.lycoris_preset_input = QLineEdit(self.main_tab)
+        self.lycoris_preset_input = PresetComboBox(self.main_tab)
         self.lycoris_preset_input.setObjectName(u"lycoris_preset_input")
         self.lycoris_preset_input.setEnabled(False)
 
@@ -604,9 +605,6 @@ class Ui_network_ui(object):
         self.min_timestep_label.setText(QCoreApplication.translate("network_ui", u"Min Timestep", None))
 #if QT_CONFIG(tooltip)
         self.min_timestep_input.setToolTip(QCoreApplication.translate("network_ui", u"<html><head/><body><p>Min timestep represents the lowest timestep to train on. Typically you want to keep this value at 0</p></body></html>", None))
-#endif // QT_CONFIG(tooltip)
-#if QT_CONFIG(tooltip)
-        self.lycoris_preset_input.setToolTip(QCoreApplication.translate("network_ui", u"<html><head/><body><p>LyCORIS Preset is the preset used by the LyCORIS library. Typically you want to use &quot;full&quot; which is automatically selected when there is nothing provided</p></body></html>", None))
 #endif // QT_CONFIG(tooltip)
 
 #if QT_CONFIG(tooltip)

@@ -667,12 +667,9 @@
         </layout>
        </item>
        <item row="1" column="1">
-        <widget class="QLineEdit" name="lycoris_preset_input">
+        <widget class="PresetComboBox" name="lycoris_preset_input">
          <property name="enabled">
           <bool>false</bool>
-         </property>
-         <property name="toolTip">
-          <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;LyCORIS Preset is the preset used by the LyCORIS library. Typically you want to use &amp;quot;full&amp;quot; which is automatically selected when there is nothing provided&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
          </property>
         </widget>
        </item>
@@ -892,6 +889,11 @@
    <class>DoubleSpinBox</class>
    <extends>QDoubleSpinBox</extends>
    <header>modules.ScrollOnSelect.h</header>
+  </customwidget>
+  <customwidget>
+   <class>PresetComboBox</class>
+   <extends>QComboBox</extends>
+   <header>modules.PresetComboBox.h</header>
   </customwidget>
   <customwidget>
    <class>LineEditWithHighlight</class>
