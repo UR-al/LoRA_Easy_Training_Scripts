@@ -1,4 +1,5 @@
 import contextlib
+import os
 from pathlib import Path
 import sys
 import json
@@ -12,11 +13,38 @@ import subprocess
 import time
 
 
-def run_backend():
+def venv_python(venv: str) -> Path:
     if sys.platform == "linux":
-        python = Path("backend/sd_scripts/venv/bin/python")
-    else:
-        python = Path("backend/sd_scripts/venv/Scripts/python.exe")
+        return Path(f"backend/sd_scripts/{venv}/bin/python")
+    return Path(f"backend/sd_scripts/{venv}/Scripts/python.exe")
+
+
+def training_venv(config_dict: dict) -> str:
+    """The training venv the backend runs in: backend/sd_scripts/venv_t214 (PyTorch 2.14) when chosen with
+    run.bat --torch 2.14, LETS_TORCH=2.14 or "torch_profile": "2.14" in config.json, or when it is the only one
+    installed; else venv (2.7)."""
+    chosen = os.environ.get("LETS_TORCH", "") or str(config_dict.get("torch_profile", ""))
+    for i, arg in enumerate(sys.argv):
+        if arg == "--torch" and i + 1 < len(sys.argv):
+            chosen = sys.argv[i + 1]
+        elif arg.startswith("--torch="):
+            chosen = arg.split("=", 1)[1]
+    has_27, has_214 = venv_python("venv").exists(), venv_python("venv_t214").exists()
+    if chosen.strip() in ("2.14", "2.14.0", "214"):
+        if has_214:
+            return "venv_t214"
+        print("PyTorch 2.14 venv not installed (update.bat --torch 2.14 adds it): using backend/sd_scripts/venv")
+    elif has_214 and not has_27:
+        print("only the PyTorch 2.14 venv is installed: using backend/sd_scripts/venv_t214")
+        return "venv_t214"
+    return "venv"
+
+
+def run_backend(venv: str = "venv"):
+    python = venv_python(venv)
+    if not python.exists():
+        print(f"training venv not found: {python} (run install.bat)")
+        return
     with contextlib.suppress(Exception):
         subprocess.check_call(
             f"{python} backend/main.py backend", shell=sys.platform == "linux"
@@ -44,7 +72,7 @@ def main() -> None:
     config.write_text(json.dumps(config_dict, indent=2))
     backend_thread = None
     if "run_local" in config_dict and config_dict["run_local"]:
-        backend_thread = Thread(target=run_backend, daemon=True)
+        backend_thread = Thread(target=run_backend, args=(training_venv(config_dict),), daemon=True)
         backend_thread.start()
     app = QtWidgets.QApplication(sys.argv)
     if config_dict["theme"]["location"]:

@@ -121,8 +121,10 @@ function Invoke-AnimaTraining([string]$Model, [object[]]$Arguments) {
         $problems++
     }
 
-    $activate = Join-Path $AnimaRepoRoot "backend\sd_scripts\venv\Scripts\Activate.ps1"
-    $accelerateExe = Join-Path $AnimaRepoRoot "backend\sd_scripts\venv\Scripts\accelerate.exe"
+    # PyTorch profile: $env:LETS_TORCH = "2.14" trains in backend\sd_scripts\venv_t214 (install.bat --torch 2.14)
+    $venvName = if ($env:LETS_TORCH -and $env:LETS_TORCH.Trim() -in @("2.14", "2.14.0", "214")) { "venv_t214" } else { "venv" }
+    $activate = Join-Path $AnimaRepoRoot "backend\sd_scripts\$venvName\Scripts\Activate.ps1"
+    $accelerateExe = Join-Path $AnimaRepoRoot "backend\sd_scripts\$venvName\Scripts\accelerate.exe"
     $trainer = Join-Path $AnimaRepoRoot ("backend\sd_scripts\" + $setup.Script)
     $config = Join-Path $AnimaExampleDir $setup.Config
     if (-not (Test-Path -LiteralPath $trainer -PathType Leaf)) {

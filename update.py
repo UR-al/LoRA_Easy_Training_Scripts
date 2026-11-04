@@ -21,10 +21,9 @@ def main():
     if "run_local" in config_dict and config_dict["run_local"]:
         check_call("git submodule update --init --recursive", shell=platform == "linux")
         os.chdir("backend")
-        check_call(
-            f"{sys.executable} updater.py",
-            shell=platform == "linux",
-        )
+        # updates every installed PyTorch profile venv (venv = 2.7, venv_t214 = 2.14); update.bat --torch 2.14
+        # updates only that one, or installs it next to the other
+        check_call([sys.executable, "updater.py", *sys.argv[1:]])
 
 
 if __name__ == "__main__":

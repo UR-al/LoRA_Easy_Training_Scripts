@@ -12,6 +12,13 @@ What this branch adds to [67372a/LoRA_Easy_Training_Scripts](https://github.com/
 git clone -b moss-image --recurse-submodules https://github.com/UR-al/LoRA_Easy_Training_Scripts
 ```
 
+**PyTorch 2.7 and 2.14, side by side** (11/04/2026): each lives in its own training venv — 2.7 in `backend\sd_scripts\venv`, 2.14 in `backend\sd_scripts\venv_t214`.
+- **Install**: `install.bat` asks (2.7 / 2.14 / both; Enter = 2.7). `install.bat --torch 2.14` (or `2.7`, `both`) skips the question.
+- **Update**: `update.bat` updates every profile venv you have; `update.bat --torch 2.14` updates only that one, or adds it next to 2.7.
+- **Train with 2.14**: `run.bat --torch 2.14`, or `"torch_profile": "2.14"` in `config.json` (the GUI); `$env:LETS_TORCH = "2.14"` for the `examples` launchers. Without it everything uses 2.7.
+- **2.7** — torch 2.7.1 + CUDA 12.8, xformers, flash-attn 2.8.0. The long-tested set; every number below was measured with it.
+- **2.14** — torch 2.14.0 + CUDA 13.0, triton-windows 3.8, flash-attn 2.8.4 (Windows, Python 3.11; no Linux wheel yet, use `--attn_mode torch`), no xformers. Its Windows build has PyTorch's *expandable segments*. The LoRA trainers (`train_network.py` and the `*_train_network.py` scripts) and `anima_train.py` switch them on by themselves unless `PYTORCH_CUDA_ALLOC_CONF` / `PYTORCH_ALLOC_CONF` is set. On a 2.9B LoKr run (launched with `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` set by hand) the CUDA cache stayed at the real peak (reserved 19.4 GiB, device 21 GiB) across an epoch boundary where 2.7 filled the card (30.5 / 31.8 GiB) and slowed to 20–500 s/step. Needs an NVIDIA driver with CUDA 13. Checked on that one 2.9B LoKr + DoRA run only.
+
 Measured on an RTX 5090 (32 GB), Windows 11, torch 2.7.1 (cu128), LoKr (factor 4) + DoRA.
 - The speed-ups do not change training results: with the same settings the loss is effectively identical, it is just faster.
 - VRAM figures are PyTorch peak memory in GiB, so they read a little lower than Task Manager.

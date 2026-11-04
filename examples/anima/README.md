@@ -27,6 +27,10 @@ tracked file that also changed upstream. Put your own settings in copies or on t
 Install with the `git clone` command in the main README, then run `install.bat` in the repo root and answer `y` to
 *Are you using this locally?*. This creates `backend\sd_scripts\venv` with PyTorch, LyCORIS and flash-attn
 (Windows, Python 3.11). A GitHub ZIP download has no submodules, so `install.bat` cannot set up the trainer from it.
+It also asks for the PyTorch version: Enter installs **2.7** (torch 2.7.1, the tested default) in `venv`; **2.14**
+(torch 2.14.0, CUDA 13 driver needed) goes to `backend\sd_scripts\venv_t214`, next to it. On one 2.9B LoKr run 2.14
+kept the CUDA cache from filling the card. The launchers below use 2.7 unless you set `$env:LETS_TORCH = "2.14"`
+first (see the main README for `--torch` and `update.bat`).
 
 The configs use `attn_mode = "flash"`. If flash-attn is not available on your system, add `--attn_mode torch` to the
 launcher command (see section 4) instead of editing the config.
