@@ -6,6 +6,8 @@ from threading import Thread
 from PySide6 import QtGui, QtCore, QtWidgets
 import requests
 
+from modules.BackendAuth import backend_headers
+
 
 class DragDropLineEdit(QtWidgets.QLineEdit):
     def __init__(
@@ -87,9 +89,11 @@ class DragDropLineEdit(QtWidgets.QLineEdit):
             if config.exists()
             else {"backend_url": "http://127.0.0.1:8000"}
         )
+        url = config.get("backend_url", "http://127.0.0.1:8000")
         try:
             response = requests.post(
-                f"{config.get('backend_url', 'http://127.0.0.1:8000')}/check_path",
+                f"{url}/check_path",
+                headers=backend_headers(url, config),
                 json=True,
                 data=json.dumps(
                     {

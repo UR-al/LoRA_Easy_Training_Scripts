@@ -5,6 +5,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton
 import requests
 from ui_files.LoraResizePopupUI import Ui_lora_resize_ui
+from modules.BackendAuth import backend_headers
 from modules.BaseDialog import BaseDialog
 from modules.DragDropLineEdit import DragDropLineEdit
 from modules.ScrollOnSelect import ComboBox
@@ -358,6 +359,7 @@ class LoraResizePopup(BaseDialog):
                 f"{url}/resize",
                 data=json.dumps(args),
                 timeout=0.05,
+                headers=backend_headers(url, config_dict),
             )
         except ConnectionError as e:
             print(e)

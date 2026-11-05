@@ -8,7 +8,7 @@
 
 from PySide6.QtCore import (QCoreApplication, QMetaObject, Qt)
 from PySide6.QtWidgets import (QCheckBox, QFormLayout, QGroupBox, QLabel,
-    QSizePolicy, QVBoxLayout, QWidget)
+    QLineEdit, QSizePolicy, QVBoxLayout, QWidget)
 
 from modules.ScrollOnSelect import SpinBox
 
@@ -58,6 +58,15 @@ class Ui_accelerate_ui(object):
         self.main_process_port_input.setValue(29500)
         self.formLayout.setWidget(1, QFormLayout.FieldRole, self.main_process_port_input)
 
+        # GPU IDs (accelerate --gpu_ids); empty lets the backend choose
+        self.gpu_ids_label = QLabel(self.accelerate_group)
+        self.gpu_ids_label.setObjectName(u"gpu_ids_label")
+        self.formLayout.setWidget(2, QFormLayout.LabelRole, self.gpu_ids_label)
+
+        self.gpu_ids_input = QLineEdit(self.accelerate_group)
+        self.gpu_ids_input.setObjectName(u"gpu_ids_input")
+        self.formLayout.setWidget(2, QFormLayout.FieldRole, self.gpu_ids_input)
+
         self.verticalLayout.addWidget(self.accelerate_group)
 
         self.retranslateUi(accelerate_ui)
@@ -77,4 +86,10 @@ class Ui_accelerate_ui(object):
         self.main_process_port_label.setToolTip(QCoreApplication.translate("accelerate_ui",
             u"<html><head/><body><p>Port for the main process to communicate with other processes. "
             u"Change this if the default port (29500) is already in use.</p></body></html>", None))
+        self.gpu_ids_label.setText(QCoreApplication.translate("accelerate_ui", u"GPU IDs", None))
+        self.gpu_ids_label.setToolTip(QCoreApplication.translate("accelerate_ui",
+            u"<html><head/><body><p>Which GPUs to train on, as comma-separated GPU numbers (accelerate --gpu_ids), "
+            u"one per process: 0,1 for two GPUs. Only for Number of GPUs 2 or more; leave empty to let the backend "
+            u"choose.</p></body></html>", None))
+        self.gpu_ids_input.setPlaceholderText(QCoreApplication.translate("accelerate_ui", u"e.g. 0,1 (empty: backend default)", None))
     # retranslateUi

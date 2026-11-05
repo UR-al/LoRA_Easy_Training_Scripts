@@ -9,6 +9,7 @@ from PySide6 import QtWidgets
 from qt_material import apply_stylesheet
 import requests
 from main_ui_files.MainWindow import MainWindow
+from modules.BackendAuth import backend_headers
 import subprocess
 import time
 
@@ -100,7 +101,8 @@ def main() -> None:
     if window.main_widget.training_thread:
         while window.main_widget.training_thread.is_alive():
             time.sleep(5.0)
-    requests.get(f"{window.main_widget.backend_url_input.text()}/stop_server")
+    url = window.main_widget.backend_url_input.text()
+    requests.get(f"{url}/stop_server", headers=backend_headers(url))
 
 
 if __name__ == "__main__":

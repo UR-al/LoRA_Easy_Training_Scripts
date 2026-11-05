@@ -4,6 +4,8 @@ import json
 
 from functools import wraps
 
+from modules.BackendAuth import backend_headers
+
 # Wrap failed network reply with additional error message
 def default_error(message = ""):
     def print_error(reply: QNetworkReply):
@@ -36,6 +38,8 @@ class NetworkManager(object):
             query.addQueryItem(key, value)
         url.setQuery(query)
         request = QNetworkRequest(url)
+        for name, value in backend_headers(self._url).items():
+            request.setRawHeader(name.encode(), value.encode())
         reply = self._network_manager.get(request)
         on_failure = on_failure or default_error("Query failed: " + route)
         reply.finished.connect(lambda: self.handle_response(reply, on_success, on_failure))

@@ -73,8 +73,12 @@ class QueueWidget(QWidget):
         else:
             self.selected = False
 
-    def remove_first_from_queue(self) -> None:
-        elem = self.elements[0]
+    def remove_first_from_queue(self, elem: QueueItem | None = None) -> None:
+        """Take the first item (or the given one, when it is still queued) out of the queue; its file stays."""
+        if elem is None:
+            elem = self.elements[0]
+        elif elem not in self.elements:
+            return
         if elem == self.selected:
             self.selected = False
             self.uncheck_elements(True)

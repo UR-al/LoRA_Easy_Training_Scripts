@@ -6,6 +6,14 @@ from ui_files.AccelerateUI import Ui_accelerate_ui
 from modules.BaseWidget import BaseWidget
 
 
+def gpu_id_list(text: str) -> list[str] | None:
+    """The GPU numbers of a GPU IDs field ("0, 1" -> ["0", "1"]); None when it is not comma-separated GPU numbers."""
+    parts = [part.strip() for part in text.split(",")]
+    if not all(part.isascii() and part.isdigit() for part in parts):
+        return None
+    return [str(int(part)) for part in parts]
+
+
 class AccelerateWidget(BaseWidget):
     """Widget for configuring multi-GPU training with accelerate launch.
 
@@ -18,6 +26,7 @@ class AccelerateWidget(BaseWidget):
         "enabled": False,
         "num_processes": 2,
         "main_process_port": 29500,
+        "gpu_ids": "",
     }
 
     def __init__(self, parent: QWidget = None) -> None:
@@ -43,17 +52,44 @@ class AccelerateWidget(BaseWidget):
         self.widget.accelerate_group.clicked.connect(self.save_to_config)
         self.widget.num_processes_input.valueChanged.connect(self.save_to_config)
         self.widget.main_process_port_input.valueChanged.connect(self.save_to_config)
+        self.widget.gpu_ids_input.textChanged.connect(self.save_to_config)
 
     def get_accelerate_settings(self) -> dict:
         """Return accelerate settings for passing to backend."""
         if not self.widget.accelerate_group.isChecked():
             return {"enabled": False}
 
-        return {
+        settings = {
             "enabled": True,
             "num_processes": self.widget.num_processes_input.value(),
             "main_process_port": self.widget.main_process_port_input.value(),
         }
+        gpu_ids = self.widget.gpu_ids_input.text().strip()
+        if gpu_ids:  # empty: no key, the backend picks the GPUs (as before this field existed)
+            settings["gpu_ids"] = gpu_ids
+        return settings
+
+    def get_validation_errors(self) -> list[str]:
+        text = self.widget.gpu_ids_input.text().strip()
+        if not self.widget.accelerate_group.isChecked() or not text:
+            return []
+        ids = gpu_id_list(text)
+        if ids is None:
+            return [f"Multi-GPU Training: GPU IDs must be comma-separated GPU numbers such as 0,1 (got '{text}')"]
+        if len(set(ids)) != len(ids):
+            return [f"Multi-GPU Training: GPU IDs names a GPU more than once ('{text}')"]
+        processes = self.widget.num_processes_input.value()
+        if processes < 2:
+            # one process is a plain 'accelerate launch' on the backend's default GPU: the ids would be ignored
+            return [
+                f"Multi-GPU Training: GPU IDs apply only with Number of GPUs 2 or more (it is {processes}); "
+                "clear GPU IDs or raise Number of GPUs"
+            ]
+        if len(ids) != processes:
+            return [
+                f"Multi-GPU Training: GPU IDs lists {len(ids)} GPUs but Number of GPUs is {processes}; make them match"
+            ]
+        return []
 
     def save_to_config(self) -> None:
         """Persist accelerate settings to config.json."""
@@ -74,6 +110,7 @@ class AccelerateWidget(BaseWidget):
         self.widget.accelerate_group.setChecked(accel.get("enabled", self.CONFIG_DEFAULTS["enabled"]))
         self.widget.num_processes_input.setValue(accel.get("num_processes", self.CONFIG_DEFAULTS["num_processes"]))
         self.widget.main_process_port_input.setValue(accel.get("main_process_port", self.CONFIG_DEFAULTS["main_process_port"]))
+        self.widget.gpu_ids_input.setText(str(accel.get("gpu_ids", self.CONFIG_DEFAULTS["gpu_ids"])))
 
     def load_args(self, args: dict) -> bool:
         """Load accelerate settings from config.json (not from TOML args)."""

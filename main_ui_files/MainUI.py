@@ -1,11 +1,12 @@
 import contextlib
 import json
-import os
 from PySide6 import QtWidgets
 from PySide6.QtWidgets import QWidget, QGridLayout, QPushButton
+from main_ui_files.AccelerateUI import gpu_id_list
 from main_ui_files.ArgsListUI import ArgsWidget
 from main_ui_files.SubsetListUI import SubsetListWidget
 from modules import ScrollOnSelect, TomlFunctions
+from modules.BackendAuth import backend_headers
 from modules.LineEditHighlight import LineEditWithHighlight
 from main_ui_files.QueueUI import QueueWidget
 from modules.Enums import TrainingModes
@@ -16,7 +17,6 @@ import requests
 import toml
 from requests.exceptions import ConnectionError
 from time import sleep
-import shutil
 
 
 class TomlLoadError(Exception):
@@ -34,6 +34,17 @@ def backend_error_text(response) -> str:
     if isinstance(body, dict) and "detail" in body:
         return str(body["detail"])
     return str(body)
+
+
+def training_started(response) -> bool:
+    """Whether the backend accepted /train: HTTP 200, and not a body that says {"training": false}."""
+    if response.status_code != 200:
+        return False
+    try:
+        body = response.json()
+    except ValueError:
+        return True
+    return not (isinstance(body, dict) and body.get("training") is False)
 
 
 class MainWidget(QWidget):
@@ -272,7 +283,8 @@ class MainWidget(QWidget):
     def start_training(self) -> None:
         if self.training_thread and self.training_thread.is_alive():
             with contextlib.suppress(Exception):
-                requests.get(f"{self.backend_url_input.text()}/stop_training")
+                url = self.backend_url_input.text()
+                requests.get(f"{url}/stop_training", headers=backend_headers(url))
             self.begin_training_button.setText("Start Training")
             return
         validation_errors = self.get_validation_errors()
@@ -290,12 +302,18 @@ class MainWidget(QWidget):
         url = self.backend_url_input.text()
         if self.queue_widget.elements:
             while self.queue_widget.elements:
-                queue_file = self.queue_widget.elements[0].queue_file
-                is_checked = self.queue_widget.elements[0].isChecked()
-                self.queue_widget.remove_first_from_queue()
-                if is_checked:
+                item = self.queue_widget.elements[0]
+                queue_file = item.queue_file
+                if item.isChecked():
                     self.save_toml(queue_file)
-                if not self.train_helper(url, queue_file):
+                # the item leaves the queue only once the backend has accepted the start; a refused start keeps it
+                # (and its TOML) for a retry. One the user removes before /train is not started (the queue moves on).
+                if not self.train_helper(
+                    url,
+                    queue_file,
+                    on_started=lambda item=item: self.queue_widget.remove_first_from_queue(item),
+                    still_queued=lambda item=item: item in self.queue_widget.elements,
+                ):
                     self.begin_training_button.setText("Start Training")
                     return
         else:
@@ -303,13 +321,23 @@ class MainWidget(QWidget):
             self.train_helper(url, Path("queue_store/temp.toml"))
         self.begin_training_button.setText("Start Training")
 
-    def train_helper(self, url: str, train_toml: Path) -> bool:
+    def train_helper(self, url: str, train_toml: Path, on_started=None, still_queued=None) -> bool:
+        """Validate and start one job, then wait for it. False when it did not start or failed (the queue stops).
+        Only after the backend accepted /train is the TOML deleted, on_started called and the tag file / auto-save
+        TOML written, so a refused start leaves nothing behind. When still_queued() is false after /validate (the user
+        removed the item meanwhile) nothing is started and True lets the queue move on."""
         try:
             args, dataset_args, train_mode = self.process_toml(train_toml)
+            # read once: the auto-save copy must not depend on the file, which a queue removal deletes
+            toml_bytes = Path(train_toml).read_bytes()
         except TomlLoadError as e:
             self.training_error.emit("Cannot train this item", f"{e}\n\nIts args were probably invalid when saved.")
             return False
+        except OSError as e:
+            self.training_error.emit("Cannot train this item", f"{train_toml} could not be read:\n{e}")
+            return False
         config = json.loads(Path("config.json").read_text())
+        headers = backend_headers(url, config)  # a token only for a backend on another machine
 
         # Include accelerate settings in validation request for proper warmup step calculation
         final_args = {
@@ -318,7 +346,7 @@ class MainWidget(QWidget):
             "accelerate": config.get("accelerate", {}),
         }
         try:
-            response = requests.post(f"{url}/validate", json=True, data=json.dumps(final_args))
+            response = requests.post(f"{url}/validate", json=True, data=json.dumps(final_args), headers=headers)
         except ConnectionError as e:
             print(e)
             self.training_error.emit(
@@ -332,21 +360,9 @@ class MainWidget(QWidget):
             self.training_error.emit("Backend validation failed", backend_error_text(response))
             return False
         validation_data = response.json()
-        if args.get("saving_args", {}).get("tag_occurrence", None):
-            folder = args["saving_args"].get("tag_file_location", None)
-            self.create_tag_file(
-                validation_data.get("tags", {}),
-                Path(folder) if folder else None,
-                args["saving_args"].get("output_name", "output_tags"),
-            )
-        if args.get("saving_args", {}).get("save_toml", None):
-            folder = args["saving_args"].get("save_toml_location", None)
-            self.create_auto_save_toml(
-                train_toml,
-                Path(folder) if folder else None,
-                args["saving_args"].get("output_name", "output_args"),
-            )
-        os.remove(train_toml)
+        if still_queued is not None and not still_queued():
+            print(f"{train_toml} was removed from the queue while it was being validated; it was not started.")
+            return True
         is_sdxl = str(args.get("general_args").get("sdxl", False))
         is_flux = str(bool(args.get("flux_args")))
         is_anima = str(bool(args.get("anima_args")))
@@ -367,13 +383,52 @@ class MainWidget(QWidget):
             train_params["accelerate_enabled"] = "True"
             train_params["accelerate_num_processes"] = str(accel.get("num_processes", 2))
             train_params["accelerate_main_process_port"] = str(accel.get("main_process_port", 29500))
+            gpu_ids = str(accel.get("gpu_ids") or "").strip()
+            if gpu_ids:  # only when set: an empty field leaves the GPU choice to the backend, as before
+                ids = gpu_id_list(gpu_ids)
+                train_params["accelerate_gpu_ids"] = ",".join(ids) if ids is not None else gpu_ids
 
-        response = requests.get(f"{url}/train", params=train_params)
+        try:
+            response = requests.get(f"{url}/train", params=train_params, headers=headers)
+        except requests.exceptions.RequestException as e:
+            print(e)
+            response = None
+        if response is None or response.status_code >= 500:
+            # No answer, or a server error page. A backend that closes its tunnel (colab, kill_tunnel_on_train_start)
+            # or stops its server (colab) as training starts drops this request right after /validate succeeded, so
+            # ask the backend before calling it a failed start.
+            state = self.backend_training_state(url, headers)
+            if state is False:  # the backend is up and idle: the start failed
+                if response is None:
+                    title, text = "Connection Error", f"Failed to reach the backend at {url} to start training."
+                else:
+                    print(f"Training did not start: {response.text}")
+                    title, text = "Training did not start", backend_error_text(response)
+                self.training_error.emit(title, f"{text}\n\nNothing was removed from the queue.")
+                return False
+            if state is None:  # the backend went away as it was asked to start: it is probably training
+                self.start_accepted(train_toml, toml_bytes, args, validation_data, on_started)
+                print("Connection Failed, assuming training has stopped.")
+                self.training_warning.emit(
+                    "Lost the backend after starting training",
+                    f"The backend at {url} stopped answering right after it was asked to start training. A Colab "
+                    "backend, or one with kill_tunnel_on_train_start, closes its tunnel when training starts, so it is "
+                    "probably training this item: it was taken off the queue. The rest of the queue waits.",
+                )
+                return False
+        elif not training_started(response):
+            print(f"Training did not start: {response.text}")
+            self.training_error.emit(
+                "Training did not start",
+                f"{backend_error_text(response)}\n\nNothing was removed from the queue.",
+            )
+            return False
+        self.start_accepted(train_toml, toml_bytes, args, validation_data, on_started)
         training = True
         while training:
             sleep(5.0)
             try:
-                response = requests.get(f"{url}/is_training")
+                response = requests.get(f"{url}/is_training", headers=headers)
             except Exception:
                 print("Connection Failed, assuming training has stopped.")
                 return False
@@ -386,6 +441,48 @@ class MainWidget(QWidget):
             if response["errored"]:
                 return False
         return True
+
+    @staticmethod
+    def backend_training_state(url: str, headers: dict) -> bool | None:
+        """/is_training's "training", or None when the backend cannot be reached or does not answer like the backend
+        (a tunnel's error page)."""
+        try:
+            response = requests.get(f"{url}/is_training", headers=headers, timeout=30)
+            body = response.json() if response.status_code == 200 else None
+        except (requests.exceptions.RequestException, ValueError):
+            return None
+        if isinstance(body, dict) and isinstance(body.get("training"), bool):
+            return body["training"]
+        return None
+
+    def start_accepted(self, train_toml: Path, toml_bytes: bytes, args: dict, validation_data: dict, on_started) -> None:
+        """The backend took the job: the queue item and its TOML go, and the tag file and auto-save TOML are written.
+        Training is running by now, so a failed write is a warning and the training thread goes on."""
+        Path(train_toml).unlink(missing_ok=True)  # the user may have removed the queue item meanwhile
+        if on_started is not None:
+            on_started()
+        saving_args = args.get("saving_args", {})
+        try:
+            if saving_args.get("tag_occurrence", None):
+                folder = saving_args.get("tag_file_location", None)
+                self.create_tag_file(
+                    validation_data.get("tags", {}),
+                    Path(folder) if folder else None,
+                    saving_args.get("output_name", "output_tags"),
+                )
+            if saving_args.get("save_toml", None):
+                folder = saving_args.get("save_toml_location", None)
+                self.create_auto_save_toml(
+                    toml_bytes,
+                    Path(folder) if folder else None,
+                    saving_args.get("output_name", "output_args"),
+                )
+        except OSError as e:
+            print(e)
+            self.training_warning.emit(
+                "Training started, but a file was not saved",
+                f"The tag file or the auto-save TOML could not be written:\n{e}",
+            )
 
     def create_tag_file(
         self,
@@ -409,7 +506,7 @@ class MainWidget(QWidget):
 
     def create_auto_save_toml(
         self,
-        input_toml: Path,
+        toml_bytes: bytes,
         output_location: Path | None = None,
         output_name: str = "output_toml",
     ):
@@ -425,4 +522,4 @@ class MainWidget(QWidget):
         while output_location.exists():
             output_location = output_location.with_stem(f"{orig_name}_{offset}")
             offset += 1
-        shutil.copy(input_toml, output_location)
+        output_location.write_bytes(toml_bytes)
