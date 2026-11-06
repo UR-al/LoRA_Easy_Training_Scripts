@@ -306,8 +306,9 @@ class MainWidget(QWidget):
                 queue_file = item.queue_file
                 if item.isChecked():
                     self.save_toml(queue_file)
-                # the item leaves the queue only once the backend has accepted the start; a refused start keeps it
-                # (and its TOML) for a retry. One the user removes before /train is not started (the queue moves on).
+                # the item leaves the queue only once the backend has accepted the start; a refused start, or one
+                # whose outcome is unknown (the backend stopped answering), keeps it (and its TOML) for a retry.
+                # One the user removes before /train is not started (the queue moves on).
                 if not self.train_helper(
                     url,
                     queue_file,
@@ -322,10 +323,12 @@ class MainWidget(QWidget):
         self.begin_training_button.setText("Start Training")
 
     def train_helper(self, url: str, train_toml: Path, on_started=None, still_queued=None) -> bool:
-        """Validate and start one job, then wait for it. False when it did not start or failed (the queue stops).
-        Only after the backend accepted /train is the TOML deleted, on_started called and the tag file / auto-save
-        TOML written, so a refused start leaves nothing behind. When still_queued() is false after /validate (the user
-        removed the item meanwhile) nothing is started and True lets the queue move on."""
+        """Validate and start one job, then wait for it. False when it did not start, may not have started, or failed
+        (the queue stops). Only once the backend accepted /train (or a failed /train is followed by /is_training saying
+        it trains) is the TOML deleted, on_started called and the tag file / auto-save TOML written, so a refused start
+        leaves nothing behind. When /train fails and the backend cannot be asked afterwards, the start is unknown: the
+        item is kept as for a refused start, with a warning instead of an error. When still_queued() is false after
+        /validate (the user removed the item meanwhile) nothing is started and True lets the queue move on."""
         try:
             args, dataset_args, train_mode = self.process_toml(train_toml)
             # read once: the auto-save copy must not depend on the file, which a queue removal deletes
@@ -394,9 +397,14 @@ class MainWidget(QWidget):
             print(e)
             response = None
         if response is None or response.status_code >= 500:
-            # No answer, or a server error page. A backend that closes its tunnel (colab, kill_tunnel_on_train_start)
-            # or stops its server (colab) as training starts drops this request right after /validate succeeded, so
-            # ask the backend before calling it a failed start.
+            # No answer, or a server error page: ask the backend whether it trains. Idle is a refused start, training
+            # is a start. No usable answer proves neither. A current backend answers /train first and only then
+            # closes its tunnel (kill_tunnel_on_train_start) or stops its server (Colab), but an older backend with
+            # kill_tunnel_on_train_start, or an older Colab backend, did that as training started and dropped the
+            # answer, so it may be training anyway; a backend that crashed while starting looks the same, so the item
+            # is kept and the queue stops. While a run is going, a backend that can be reached refuses /validate and
+            # /train with 409 "Training Already Running" (the GUI asks /validate first), so a retry then cannot start
+            # it twice; once that run has finished, a retry trains the item again.
             state = self.backend_training_state(url, headers)
             if state is False:  # the backend is up and idle: the start failed
                 if response is None:
@@ -406,14 +414,27 @@ class MainWidget(QWidget):
                     title, text = "Training did not start", backend_error_text(response)
                 self.training_error.emit(title, f"{text}\n\nNothing was removed from the queue.")
                 return False
-            if state is None:  # the backend went away as it was asked to start: it is probably training
-                self.start_accepted(train_toml, toml_bytes, args, validation_data, on_started)
-                print("Connection Failed, assuming training has stopped.")
+            if state is None:  # the backend went away as it was asked to start: the start is unknown
+                print(f"The backend stopped answering after /train; {train_toml} was kept.")
+                if on_started is not None:  # a queue item
+                    what, advice = "this item", (
+                        "The item was kept in the queue and the queue stopped. Check the backend: if it is training "
+                        "or has already trained this item, remove the item from the queue; otherwise press Start "
+                        "Training to retry."
+                    )
+                else:  # Start Training with an empty queue trains the current args
+                    what, advice = "these args", (
+                        "Nothing was queued, so nothing was removed. Check the backend: if it is training or has "
+                        "already trained these args, do not start them again; otherwise press Start Training to retry."
+                    )
                 self.training_warning.emit(
-                    "Lost the backend after starting training",
-                    f"The backend at {url} stopped answering right after it was asked to start training. A Colab "
-                    "backend, or one with kill_tunnel_on_train_start, closes its tunnel when training starts, so it is "
-                    "probably training this item: it was taken off the queue. The rest of the queue waits.",
+                    "Training may have started",
+                    f"The backend at {url} stopped answering right after it was asked to start training.\n\n"
+                    "An older backend with kill_tunnel_on_train_start closes its tunnel as training starts, and an "
+                    "older Colab backend stops its server (a current backend answers first), so it may be training "
+                    f"{what} anyway; a backend that crashed while starting looks the same.\n\n{advice} While a run "
+                    "is going, a backend that can be reached refuses a new start (409 \"Training Already Running\"); "
+                    f"once that run has finished, a retry trains {what} again.",
                 )
                 return False
         elif not training_started(response):
