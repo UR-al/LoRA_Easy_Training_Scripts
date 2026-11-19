@@ -21,8 +21,7 @@ def main():
     if "run_local" in config_dict and config_dict["run_local"]:
         check_call("git submodule update --init --recursive", shell=platform == "linux")
         os.chdir("backend")
-        # updates every installed PyTorch profile venv (venv = 2.7, venv_t214 = 2.14); update.bat --torch 2.14
-        # updates only that one, or installs it next to the other
+        # updates the training venv backend/sd_scripts/venv_t214 (PyTorch 2.14), installing it when missing
         check_call([sys.executable, "updater.py", *sys.argv[1:]])
 
 

@@ -50,8 +50,7 @@ def main():
 
     subprocess.check_call("git submodule update --init --recursive", shell=platform == "linux")
     os.chdir(Path("backend"))
-    # install.bat --torch 2.7 / 2.14 / both (or LETS_TORCH) picks the PyTorch profile(s); without it
-    # backend/installer.py asks. 2.7 goes to backend/sd_scripts/venv, 2.14 to backend/sd_scripts/venv_t214.
+    # backend/installer.py installs the training venv backend/sd_scripts/venv_t214 (PyTorch 2.14)
     subprocess.check_call([sys.executable, "installer.py", "local", *sys.argv[1:]])
 
 

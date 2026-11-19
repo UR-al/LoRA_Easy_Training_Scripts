@@ -289,17 +289,17 @@ class TestUvPipInstall:
     @mock.patch("install_uv.subprocess.check_call")
     def test_custom_venv_path(self, mock_check_call):
         install_uv.uv_pip_install(
-            "/usr/bin/uv", "-U", "torch~=2.7.1",
-            "--index-url", "https://download.pytorch.org/whl/cu128",
-            venv_path="sd_scripts/venv",
+            "/usr/bin/uv", "-U", "torch==2.14.0",
+            "--index-url", "https://download.pytorch.org/whl/cu130",
+            venv_path="sd_scripts/venv_t214",
         )
-        expected_venv = str(Path("sd_scripts/venv"))
+        expected_venv = str(Path("sd_scripts/venv_t214"))
         mock_check_call.assert_called_once_with(
             [
                 "/usr/bin/uv", "pip", "install", "--python",
                 expected_venv,
-                "-U", "torch~=2.7.1",
-                "--index-url", "https://download.pytorch.org/whl/cu128",
+                "-U", "torch==2.14.0",
+                "--index-url", "https://download.pytorch.org/whl/cu130",
             ]
         )
 

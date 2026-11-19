@@ -26,7 +26,7 @@ descriptions. Caption a pilot with both and compare before captioning the whole 
 ## Steps (PowerShell, from the repository root)
 
 ```powershell
-$py = ".\backend\sd_scripts\venv\Scripts\python.exe"
+$py = ".\backend\sd_scripts\venv_t214\Scripts\python.exe"
 $kit = ".\examples\moss\recaption\moss_recaption.py"
 $work = "path\to\my_dataset_moss_recap"   # a new folder outside the dataset
 

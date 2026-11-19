@@ -103,7 +103,7 @@ class ItemsTest(unittest.TestCase):
         self.assertEqual(tip.count("<p>"), 6)
 
     def test_names_match_the_backend(self):
-        lycoris_config = ROOT / "backend/sd_scripts/venv/Lib/site-packages/lycoris/config.py"
+        lycoris_config = ROOT / "backend/sd_scripts/venv_t214/Lib/site-packages/lycoris/config.py"
         moss_presets = ROOT / "backend/sd_scripts/library/moss/lycoris_presets.py"
         if not lycoris_config.exists() or not moss_presets.exists():
             self.skipTest("backend not installed")
